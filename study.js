@@ -225,10 +225,10 @@ function poseTorsoLean(){
 function poseTorsoDogeza(){
   // Pelvis stays over the heels; the trunk progresses forward and down.
   // Roll is locked by aimBone's anatomical side-frame constraint.
-  aimBone('spine','spine1',V(0,-.18,.984));
-  aimBone('spine1','spine2',V(0,-.38,.925));
-  aimBone('spine2','neck',V(0,-.58,.815));
-  aimBone('neck','head',V(0,-.92,.392));
+  aimBone('spine','spine1',V(0,-.30,.954));
+  aimBone('spine1','spine2',V(0,-.48,.877));
+  aimBone('spine2','neck',V(0,-.64,.768));
+  aimBone('neck','head',V(0,-.96,.280));
 }
 
 function poseHandsOnThighs(){
