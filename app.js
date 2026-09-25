@@ -143,9 +143,9 @@ function pointerDown(e){e.preventDefault();if(state==='title'){startRun();return
   if(sub==='resultDetails'){toTitle();return}
 }
 if(state!=='game')return;
-if(sub==='kneesReady')startKnees();else if(sub==='headReady')startHead();else if(sub===='headPause')finishPause();else if(sub==='eyes')stopEyes();
+if(sub==='kneesReady')startKnees();else if(sub==='headReady')startHead();else if(sub==='headPause')finishPause();else if(sub==='eyes')stopEyes();
 }
 function pointerUp(e){e.preventDefault();if(ignoreUp){ignoreUp=false;return}if(state!=='game')return;if(sub==='kneesHold')endKnees();else if(sub==='headHold')releaseHead()}
-window.addEventListener('pointerdown'.pointerDown,{passive:false});window.addEventListener('pointerup',pointerUp,{passive:false});window.addEventListener('pointercancel',pointerUp,{passive:false});document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
+window.addEventListener('pointerdown',pointerDown,{passive:false});window.addEventListener('pointerup',pointerUp,{passive:false});window.addEventListener('pointercancel',pointerUp,{passive:false});document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
 renderTitle();updateBest();scheduleTitleScan();
 })();
