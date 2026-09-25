@@ -225,10 +225,10 @@ function poseTorsoLean(){
 function poseTorsoDogeza(){
   // Pelvis stays over the heels; the trunk progresses forward and down.
   // Roll is locked by aimBone's anatomical side-frame constraint.
-  aimBone('spine','spine1',V(0,.08,.997));
-  aimBone('spine1','spine2',V(0,-.16,.987));
-  aimBone('spine2','neck',V(0,-.42,.907));
-  aimBone('neck','head',V(0,-.78,.626));
+  aimBone('spine','spine1',V(0,.05,.999));
+  aimBone('spine1','spine2',V(0,-.20,.980));
+  aimBone('spine2','neck',V(0,-.46,.888));
+  aimBone('neck','head',V(0,-.90,.435));
 }
 
 function poseHandsOnThighs(){
@@ -356,8 +356,32 @@ function qaSnapshot(name){
       forwardDelta:+Math.abs(d.dot(bodyForward)).toFixed(4)
     };
   };
+  const coords=p=>({
+    side:+p.dot(bodySide).toFixed(4),
+    up:+p.dot(bodyUp).toFixed(4),
+    forward:+p.dot(bodyForward).toFixed(4)
+  });
   const q={
     pose:name,
+    points:{
+      hips:coords(point('hips')),
+      head:coords(point('head')),
+      neck:coords(point('neck')),
+      lShoulder:coords(point('lArm')),
+      rShoulder:coords(point('rArm')),
+      lElbow:coords(point('lFore')),
+      rElbow:coords(point('rFore')),
+      lWrist:coords(point('lHand')),
+      rWrist:coords(point('rHand')),
+      lHip:coords(point('lThigh')),
+      rHip:coords(point('rThigh')),
+      lKnee:coords(point('lCalf')),
+      rKnee:coords(point('rCalf')),
+      lAnkle:coords(point('lFoot')),
+      rAnkle:coords(point('rFoot')),
+      lToe:coords(point('lToe')),
+      rToe:coords(point('rToe'))
+    },
     shoulder:axisCheck(ls,rs),
     hip:axisCheck(lh,rh),
     knee:axisCheck(lk,rk),
