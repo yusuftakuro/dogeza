@@ -227,8 +227,8 @@ function poseTorsoDogeza(){
   // Roll is locked by aimBone's anatomical side-frame constraint.
   aimBone('spine','spine1',V(0,-.50,.866));
   aimBone('spine1','spine2',V(0,-.58,.815));
-  aimBone('spine2','neck',V(0,-.70,.714));
-  aimBone('neck','head',V(0,-.92,.392));
+  aimBone('spine2','neck',V(0,-.78,.626));
+  aimBone('neck','head',V(0,-.98,.199));
 }
 
 function poseHandsOnThighs(){
