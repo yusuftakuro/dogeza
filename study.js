@@ -225,9 +225,9 @@ function poseTorsoLean(){
 function poseTorsoDogeza(){
   // Pelvis stays over the heels; the trunk progresses forward and down.
   // Roll is locked by aimBone's anatomical side-frame constraint.
-  aimBone('spine','spine1',V(0,-.44,.898));
-  aimBone('spine1','spine2',V(0,-.52,.854));
-  aimBone('spine2','neck',V(0,-.58,.815));
+  aimBone('spine','spine1',V(0,-.50,.866));
+  aimBone('spine1','spine2',V(0,-.58,.815));
+  aimBone('spine2','neck',V(0,-.70,.714));
   aimBone('neck','head',V(0,-.92,.392));
 }
 
@@ -251,10 +251,10 @@ function poseHandsApproachFloor(){
 
 function poseHandsDogeza(){
   // Hands should end ahead of the knees, palms/fingers directed forward on the floor.
-  aimBone('lArm','lFore',V(-.10,-.70,.707));
-  aimBone('rArm','rFore',V(.10,-.70,.707));
-  aimBone('lFore','lHand',V(.03,-.82,.572));
-  aimBone('rFore','rHand',V(-.03,-.82,.572));
+  aimBone('lArm','lFore',V(-.70,-.50,.51));
+  aimBone('rArm','rFore',V(.70,-.50,.51));
+  aimBone('lFore','lHand',V(.70,-.50,.51));
+  aimBone('rFore','rHand',V(-.70,-.50,.51));
   aimBone('lHand','lIndex',V(0,-.02,.9998));
   aimBone('rHand','rIndex',V(0,-.02,.9998));
 }
@@ -427,7 +427,8 @@ function qaSnapshot(name){
     dogezaGeometry:name!=='dogeza' || (
       q.landmarks.headUp < q.landmarks.kneeUp + .04 &&
       q.landmarks.headUp < q.landmarks.hipUp - .20 &&
-      q.landmarks.handUp < q.landmarks.kneeUp - .08 &&
+      q.landmarks.handUp > -.01 &&
+      q.landmarks.handUp < q.landmarks.kneeUp - .04 &&
       ((q.shoulderUp ?? ((q.points.lShoulder.up+q.points.rShoulder.up)/2)) < q.landmarks.hipUp - .10) &&
       q.landmarks.headForward > q.landmarks.hipForward + .22 &&
       q.landmarks.handForward > q.landmarks.headForward + .06 &&
