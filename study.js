@@ -41,7 +41,7 @@ const anchor=new THREE.Group();
 scene.add(anchor);
 
 let root=null, helper=null, headShell=null, headWire=null;
-let bones={}, base={}, currentPose='stand';
+let bones={}, base={}, restFrames={}, currentPose='stand';
 
 const aliases={
   hips:['Hips'], spine:['Spine'], spine1:['Spine1'], spine2:['Spine2'],
@@ -54,6 +54,14 @@ const aliases={
   lCalf:['LeftLeg'], rCalf:['RightLeg'],
   lFoot:['LeftFoot'], rFoot:['RightFoot'],
   lToe:['LeftToeBase'], rToe:['RightToeBase']
+};
+
+const childMap={
+  spine:'spine1', spine1:'spine2', spine2:'neck', neck:'head',
+  lArm:'lFore', rArm:'rFore', lFore:'lHand', rFore:'rHand',
+  lHand:'lIndex', rHand:'rIndex',
+  lThigh:'lCalf', rThigh:'rCalf', lCalf:'lFoot', rCalf:'rFoot',
+  lFoot:'lToe', rFoot:'rToe'
 };
 
 function find(nameList){
@@ -71,6 +79,30 @@ function captureBones(){
       base[k]={q:b.quaternion.clone(),p:b.position.clone()};
     }
   }
+  root.updateMatrixWorld(true);
+  const worldSide=new THREE.Vector3(1,0,0);
+  for(const [key,childKey] of Object.entries(childMap)){
+    const b=bones[key], ch=bones[childKey];
+    if(!b||!ch)continue;
+
+    const bp=new THREE.Vector3(), cp=new THREE.Vector3();
+    const bq=new THREE.Quaternion();
+    b.getWorldPosition(bp); ch.getWorldPosition(cp); b.getWorldQuaternion(bq);
+
+    const dirWorld=cp.sub(bp).normalize();
+    let sideWorld=worldSide.clone().sub(dirWorld.clone().multiplyScalar(worldSide.dot(dirWorld)));
+    if(sideWorld.lengthSq()<1e-6){
+      sideWorld=new THREE.Vector3(0,0,1).sub(dirWorld.clone().multiplyScalar(dirWorld.z));
+    }
+    sideWorld.normalize();
+    const normalWorld=sideWorld.clone().cross(dirWorld).normalize();
+
+    const inv=bq.clone().invert();
+    const dirLocal=dirWorld.clone().applyQuaternion(inv).normalize();
+    const sideLocal=sideWorld.clone().applyQuaternion(inv).normalize();
+    const normalLocal=normalWorld.clone().applyQuaternion(inv).normalize();
+    restFrames[key]={dirLocal,sideLocal,normalLocal};
+  }
   boneStatus.textContent='BONES '+Object.keys(bones).length+'/'+Object.keys(aliases).length;
 }
 function resetPose(){
@@ -84,27 +116,32 @@ function resetPose(){
 }
 const V=(x,y,z)=>new THREE.Vector3(x,y,z).normalize();
 
-function aimBone(key,childKey,targetDir){
-  const b=bones[key], c=bones[childKey];
-  if(!b||!c)return;
+function aimBone(key,childKey,targetDir,targetSideHint=new THREE.Vector3(1,0,0)){
+  const b=bones[key], c=bones[childKey], frame=restFrames[key];
+  if(!b||!c||!frame)return;
   root.updateMatrixWorld(true);
 
-  const bp=new THREE.Vector3(), cp=new THREE.Vector3();
-  const bq=new THREE.Quaternion(), pq=new THREE.Quaternion();
-
-  b.getWorldPosition(bp);
-  c.getWorldPosition(cp);
-  b.getWorldQuaternion(bq);
-  if(b.parent) b.parent.getWorldQuaternion(pq);
-  else pq.identity();
-
-  const current=cp.sub(bp).normalize();
   const target=targetDir.clone().normalize();
-  const delta=new THREE.Quaternion().setFromUnitVectors(current,target);
-  const desiredWorld=delta.multiply(bq);
-  const local=pq.clone().invert().multiply(desiredWorld);
+  let side=targetSideHint.clone().sub(target.clone().multiplyScalar(targetSideHint.dot(target)));
+  if(side.lengthSq()<1e-6){
+    side=new THREE.Vector3(0,0,1).sub(target.clone().multiplyScalar(target.z));
+  }
+  side.normalize();
+  const normal=side.clone().cross(target).normalize();
+  side=target.clone().cross(normal).normalize();
 
-  b.quaternion.copy(local);
+  const localBasis=new THREE.Matrix4().makeBasis(
+    frame.sideLocal.clone(),
+    frame.dirLocal.clone(),
+    frame.normalLocal.clone()
+  );
+  const worldBasis=new THREE.Matrix4().makeBasis(side,target,normal);
+  const desiredWorldM=worldBasis.clone().multiply(localBasis.clone().invert());
+  const desiredWorldQ=new THREE.Quaternion().setFromRotationMatrix(desiredWorldM);
+
+  const parentQ=new THREE.Quaternion();
+  if(b.parent)b.parent.getWorldQuaternion(parentQ); else parentQ.identity();
+  b.quaternion.copy(parentQ.invert().multiply(desiredWorldQ));
   root.updateMatrixWorld(true);
 }
 
@@ -333,7 +370,9 @@ new GLTFLoader().load(modelURL,gltf=>{
   anchor.add(helper);
 
   makeHeadShell();
-  applyPose('stand');
+  const requestedPose=new URLSearchParams(location.search).get('pose');
+  const initialPose=['stand','descent','seiza','hands','dogeza'].includes(requestedPose)?requestedPose:'stand';
+  applyPose(initialPose);
   boneStatus.textContent += ' / SKIN '+skinned;
 
   loading.classList.add('hide');
