@@ -275,14 +275,33 @@ function updateBounds(){
   return found?box:new THREE.Box3().setFromObject(root);
 }
 
-function alignToFloorAndCenter(){
-  anchor.position.set(0,0,0);
+function alignToFloorAndCenter(fixedFloorY=null){
+  anchor.position.set(0,fixedFloorY ?? 0,0);
   anchor.updateMatrixWorld(true);
   let box=updateBounds();
   const center=new THREE.Vector3(); box.getCenter(center);
-  anchor.position.set(-center.x,-box.min.y,-center.z);
+
+  anchor.position.x-=center.x;
+  anchor.position.z-=center.z;
+  if(fixedFloorY===null){
+    anchor.position.y-=box.min.y;
+  }
   anchor.updateMatrixWorld(true);
   return updateBounds();
+}
+
+function getSeizaFloorOffset(){
+  // Compute the floor once from the upright seiza pose.
+  // HANDS and DOGEZA must reuse this vertical anchor so lowering the hands/head
+  // never lifts the knees and lower legs away from the floor.
+  resetPose();
+  anchor.position.set(0,0,0);
+  poseLegsSeiza();
+  poseTorsoUpright();
+  poseHandsOnThighs();
+  anchor.updateMatrixWorld(true);
+  const box=updateBounds();
+  return -box.min.y;
 }
 
 const cameraDirs={
@@ -433,7 +452,14 @@ function qaSnapshot(name){
 function applyPose(name){
   if(!root)return;
   currentPose=name;
+
+  let lockedFloorY=null;
+  if(name==='hands'||name==='dogeza'){
+    lockedFloorY=getSeizaFloorOffset();
+  }
+
   resetPose();
+  anchor.position.set(0,0,0);
 
   if(name==='stand'){
     poseLegsStand(); poseTorsoUpright(); poseArmsAtSides();
@@ -447,7 +473,7 @@ function applyPose(name){
     poseLegsSeiza(); poseTorsoDogeza(); poseHandsDogeza();
   }
 
-  const box=alignToFloorAndCenter();
+  const box=alignToFloorAndCenter(lockedFloorY);
   fitCamera(name,box);
   syncHeadShell();
   qaSnapshot(name);
