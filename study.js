@@ -9,9 +9,9 @@ const poseReadout=document.querySelector('#poseReadout');
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x030405);
-scene.fog=new THREE.FogExp2(0x030405,.045);
+scene.fog=new THREE.FogExp2(0x030405,.042);
 
-const camera=new THREE.PerspectiveCamera(32,innerWidth/innerHeight,.01,100);
+const camera=new THREE.PerspectiveCamera(31,innerWidth/innerHeight,.01,100);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
@@ -22,12 +22,12 @@ const controls=new OrbitControls(camera,renderer.domElement);
 controls.enableDamping=true;
 controls.dampingFactor=.08;
 controls.enablePan=false;
-controls.minDistance=1.6;
+controls.minDistance=1.5;
 controls.maxDistance=8;
 
-const grid=new THREE.GridHelper(14,28,0x4b514f,0x151919);
+const grid=new THREE.GridHelper(14,28,0x454b49,0x141818);
 grid.material.transparent=true;
-grid.material.opacity=.46;
+grid.material.opacity=.48;
 scene.add(grid);
 
 const axesMat=new THREE.LineBasicMaterial({color:0xdf4936,transparent:true,opacity:.30});
@@ -40,50 +40,32 @@ scene.add(new THREE.LineSegments(axisGeo,axesMat));
 const anchor=new THREE.Group();
 scene.add(anchor);
 
-let root=null, bones={}, base={}, helper=null, headShell=null, headWire=null;
-let currentPose='stand';
+let root=null, helper=null, headShell=null, headWire=null;
+let bones={}, base={}, currentPose='stand';
 
 const aliases={
-  hips:['Hips','hips','pelvis'],
-  spine:['Spine','spine','spine_01'],
-  spine1:['Spine1','Chest','spine_02'],
-  spine2:['Spine2','UpperChest','spine_03'],
-  neck:['Neck','neck','neck_01'],
-  head:['Head','head'],
-  lShoulder:['LeftShoulder','leftshoulder','clavicle_l'],
-  rShoulder:['RightShoulder','rightshoulder','clavicle_r'],
-  lArm:['LeftArm','leftarm','upperarm_l'],
-  rArm:['RightArm','rightarm','upperarm_r'],
-  lFore:['LeftForeArm','LeftForearm','leftforearm','lowerarm_l'],
-  rFore:['RightForeArm','RightForearm','rightforearm','lowerarm_r'],
-  lHand:['LeftHand','lefthand','hand_l'],
-  rHand:['RightHand','righthand','hand_r'],
-  lThigh:['LeftUpLeg','leftupleg','thigh_l'],
-  rThigh:['RightUpLeg','rightupleg','thigh_r'],
-  lCalf:['LeftLeg','leftleg','calf_l'],
-  rCalf:['RightLeg','rightleg','calf_r'],
-  lFoot:['LeftFoot','leftfoot','foot_l'],
-  rFoot:['RightFoot','rightfoot','foot_r']
+  hips:['Hips'], spine:['Spine'], spine1:['Spine1'], spine2:['Spine2'],
+  neck:['Neck'], head:['Head'], headTop:['HeadTop_End'],
+  lArm:['LeftArm'], rArm:['RightArm'],
+  lFore:['LeftForeArm'], rFore:['RightForeArm'],
+  lHand:['LeftHand'], rHand:['RightHand'],
+  lIndex:['LeftHandIndex1'], rIndex:['RightHandIndex1'],
+  lThigh:['LeftUpLeg'], rThigh:['RightUpLeg'],
+  lCalf:['LeftLeg'], rCalf:['RightLeg'],
+  lFoot:['LeftFoot'], rFoot:['RightFoot'],
+  lToe:['LeftToeBase'], rToe:['RightToeBase']
 };
 
-function findByAliases(list){
-  for(const n of list){
-    const exact=root.getObjectByName(n);
-    if(exact)return exact;
+function find(nameList){
+  for(const n of nameList){
+    const hit=root.getObjectByName(n);
+    if(hit)return hit;
   }
-  const lower=list.map(s=>s.toLowerCase());
-  let hit=null;
-  root.traverse(o=>{
-    if(hit)return;
-    const n=(o.name||'').toLowerCase();
-    if(lower.includes(n))hit=o;
-  });
-  return hit;
+  return null;
 }
-
 function captureBones(){
   for(const [k,list] of Object.entries(aliases)){
-    const b=findByAliases(list);
+    const b=find(list);
     if(b){
       bones[k]=b;
       base[k]={q:b.quaternion.clone(),p:b.position.clone()};
@@ -91,120 +73,197 @@ function captureBones(){
   }
   boneStatus.textContent='BONES '+Object.keys(bones).length+'/'+Object.keys(aliases).length;
 }
-
-function qOffset(key,x=0,y=0,z=0){
-  const b=bones[key]; if(!b)return;
-  b.quaternion.copy(base[key].q);
-  const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(x,y,z,'XYZ'));
-  b.quaternion.multiply(q);
-}
-function pOffset(key,x=0,y=0,z=0){
-  const b=bones[key]; if(!b)return;
-  b.position.copy(base[key].p).add(new THREE.Vector3(x,y,z));
-}
 function resetPose(){
   for(const [k,b] of Object.entries(bones)){
-    b.quaternion.copy(base[k].q);
-    b.position.copy(base[k].p);
+    if(base[k]){
+      b.quaternion.copy(base[k].q);
+      b.position.copy(base[k].p);
+    }
   }
+  root.updateMatrixWorld(true);
 }
-const d=Math.PI/180;
+const V=(x,y,z)=>new THREE.Vector3(x,y,z).normalize();
 
-function armsDown(){
-  qOffset('lArm',-78*d,0,0);
-  qOffset('rArm', 78*d,0,0);
-}
-function armsForward(amount=1){
-  // mirrored arm bones need mirrored X rotations.
-  qOffset('lArm',(-78+88*amount)*d,0, 12*d);
-  qOffset('rArm',( 78-88*amount)*d,0,-12*d);
-  qOffset('lFore',-36*amount*d,0,-4*d);
-  qOffset('rFore', 36*amount*d,0, 4*d);
+function aimBone(key,childKey,targetDir){
+  const b=bones[key], c=bones[childKey];
+  if(!b||!c)return;
+  root.updateMatrixWorld(true);
+
+  const bp=new THREE.Vector3(), cp=new THREE.Vector3();
+  const bq=new THREE.Quaternion(), pq=new THREE.Quaternion();
+
+  b.getWorldPosition(bp);
+  c.getWorldPosition(cp);
+  b.getWorldQuaternion(bq);
+  if(b.parent) b.parent.getWorldQuaternion(pq);
+  else pq.identity();
+
+  const current=cp.sub(bp).normalize();
+  const target=targetDir.clone().normalize();
+  const delta=new THREE.Quaternion().setFromUnitVectors(current,target);
+  const desiredWorld=delta.multiply(bq);
+  const local=pq.clone().invert().multiply(desiredWorld);
+
+  b.quaternion.copy(local);
+  root.updateMatrixWorld(true);
 }
 
-function updateSkinnedBounds(){
-  if(!root)return new THREE.Box3();
+function poseArmsAtSides(){
+  aimBone('lArm','lFore',V(-.10,-.995,.02));
+  aimBone('rArm','rFore',V(.10,-.995,.02));
+  aimBone('lFore','lHand',V(.02,-.995,.08));
+  aimBone('rFore','rHand',V(-.02,-.995,.08));
+  aimBone('lHand','lIndex',V(0,-.2,.98));
+  aimBone('rHand','rIndex',V(0,-.2,.98));
+}
+
+function poseLegsStand(){
+  aimBone('lThigh','lCalf',V(-.03,-1,.01));
+  aimBone('rThigh','rCalf',V(.03,-1,.01));
+  aimBone('lCalf','lFoot',V(0,-1,.02));
+  aimBone('rCalf','rFoot',V(0,-1,.02));
+  aimBone('lFoot','lToe',V(0,-.05,.999));
+  aimBone('rFoot','rToe',V(0,-.05,.999));
+}
+
+function poseLegsDescent(){
+  // Knees move forward and down while the lower legs remain beneath the body.
+  aimBone('lThigh','lCalf',V(-.03,-.82,.57));
+  aimBone('rThigh','rCalf',V(.03,-.82,.57));
+  aimBone('lCalf','lFoot',V(0,-.86,-.50));
+  aimBone('rCalf','rFoot',V(0,-.86,-.50));
+  aimBone('lFoot','lToe',V(0,-.08,.997));
+  aimBone('rFoot','rToe',V(0,-.08,.997));
+}
+
+function poseLegsSeiza(){
+  // Hip -> knee: forward/down. Knee -> ankle: backward and almost horizontal.
+  // This is the defining folded-leg structure of seiza.
+  aimBone('lThigh','lCalf',V(-.035,-.52,.85));
+  aimBone('rThigh','rCalf',V(.035,-.52,.85));
+  aimBone('lCalf','lFoot',V(0,-.16,-.987));
+  aimBone('rCalf','rFoot',V(0,-.16,-.987));
+  // Instep lies along the floor behind the ankle.
+  aimBone('lFoot','lToe',V(0,-.035,-.999));
+  aimBone('rFoot','rToe',V(0,-.035,-.999));
+}
+
+function poseTorsoUpright(){
+  aimBone('spine','spine1',V(0,1,.015));
+  aimBone('spine1','spine2',V(0,1,.01));
+  aimBone('spine2','neck',V(0,1,.015));
+  aimBone('neck','head',V(0,.995,.10));
+}
+
+function poseTorsoLean(){
+  aimBone('spine','spine1',V(0,.90,.44));
+  aimBone('spine1','spine2',V(0,.84,.54));
+  aimBone('spine2','neck',V(0,.78,.63));
+  aimBone('neck','head',V(0,.70,.71));
+}
+
+function poseTorsoDogeza(){
+  // Pelvis stays back. Torso extends forward and descends as one continuous chain.
+  aimBone('spine','spine1',V(0,.34,.94));
+  aimBone('spine1','spine2',V(0,.18,.984));
+  aimBone('spine2','neck',V(0,.06,.998));
+  aimBone('neck','head',V(0,-.34,.94));
+}
+
+function poseHandsOnThighs(){
+  aimBone('lArm','lFore',V(-.08,-.93,.36));
+  aimBone('rArm','rFore',V(.08,-.93,.36));
+  aimBone('lFore','lHand',V(.05,-.22,.974));
+  aimBone('rFore','rHand',V(-.05,-.22,.974));
+  aimBone('lHand','lIndex',V(0,-.12,.993));
+  aimBone('rHand','rIndex',V(0,-.12,.993));
+}
+
+function poseHandsApproachFloor(){
+  aimBone('lArm','lFore',V(-.10,-.48,.87));
+  aimBone('rArm','rFore',V(.10,-.48,.87));
+  aimBone('lFore','lHand',V(.02,-.42,.907));
+  aimBone('rFore','rHand',V(-.02,-.42,.907));
+  aimBone('lHand','lIndex',V(0,-.08,.997));
+  aimBone('rHand','rIndex',V(0,-.08,.997));
+}
+
+function poseHandsDogeza(){
+  // Hands should end ahead of the knees, palms/fingers directed forward on the floor.
+  aimBone('lArm','lFore',V(-.10,-.30,.949));
+  aimBone('rArm','rFore',V(.10,-.30,.949));
+  aimBone('lFore','lHand',V(.03,-.50,.865));
+  aimBone('rFore','rHand',V(-.03,-.50,.865));
+  aimBone('lHand','lIndex',V(0,-.02,.9998));
+  aimBone('rHand','rIndex',V(0,-.02,.9998));
+}
+
+function updateBounds(){
   root.updateMatrixWorld(true);
   const box=new THREE.Box3();
-  let any=false;
+  let found=false;
   root.traverse(o=>{
     if(o.isSkinnedMesh){
       o.computeBoundingBox();
-      const b=o.boundingBox.clone().applyMatrix4(o.matrixWorld);
-      box.union(b); any=true;
-    } else if(o.isMesh && o.geometry){
-      if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
-      if(o.geometry.boundingBox){
-        box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); any=true;
+      if(o.boundingBox){
+        box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld));
+        found=true;
       }
     }
   });
-  return any?box:new THREE.Box3().setFromObject(root);
+  return found?box:new THREE.Box3().setFromObject(root);
 }
 
-function alignPoseToFloor(){
+function alignToFloorAndCenter(){
   anchor.position.set(0,0,0);
   anchor.updateMatrixWorld(true);
-  let box=updateSkinnedBounds();
-  if(box.isEmpty())return box;
+  let box=updateBounds();
   const center=new THREE.Vector3(); box.getCenter(center);
   anchor.position.set(-center.x,-box.min.y,-center.z);
   anchor.updateMatrixWorld(true);
-  box=updateSkinnedBounds();
-  return box;
+  return updateBounds();
 }
 
 const cameraDirs={
-  stand:new THREE.Vector3(2.7,1.15,4.5),
-  descent:new THREE.Vector3(2.8,1.15,4.3),
-  seiza:new THREE.Vector3(3.1,1.00,3.7),
-  hands:new THREE.Vector3(3.4,.85,3.2),
-  dogeza:new THREE.Vector3(4.5,.72,.55)
+  stand:V(2.8,1.1,4.6),
+  descent:V(2.9,1.0,4.3),
+  seiza:V(3.2,.85,3.4),
+  hands:V(3.8,.70,2.5),
+  dogeza:V(5.2,.58,.28)
 };
-
 function fitCamera(name,box){
   const center=new THREE.Vector3(); box.getCenter(center);
   const size=new THREE.Vector3(); box.getSize(size);
-  const radius=Math.max(size.length()*.5,.7);
-  const vFov=THREE.MathUtils.degToRad(camera.fov);
-  const distV=radius/Math.sin(vFov*.5);
-  const hFov=2*Math.atan(Math.tan(vFov*.5)*camera.aspect);
-  const distH=radius/Math.sin(Math.max(hFov*.5,.12));
-  const dist=Math.max(distV,distH)*1.08;
-  const dir=(cameraDirs[name]||cameraDirs.stand).clone().normalize();
+  const radius=Math.max(size.length()*.5,.65);
+  const vf=THREE.MathUtils.degToRad(camera.fov);
+  const hf=2*Math.atan(Math.tan(vf*.5)*camera.aspect);
+  const dist=Math.max(radius/Math.sin(vf*.5),radius/Math.sin(Math.max(hf*.5,.12)))*1.06;
   const target=center.clone();
-  target.y=Math.max(center.y, size.y*.40);
-  camera.position.copy(target).add(dir.multiplyScalar(dist));
+  target.y=Math.max(center.y,size.y*.40);
+  camera.position.copy(target).add(cameraDirs[name].clone().multiplyScalar(dist));
   controls.target.copy(target);
   controls.update();
 }
 
 function makeHeadShell(){
-  const solidMat=new THREE.MeshBasicMaterial({color:0x030405,side:THREE.DoubleSide});
-  const wireMat=new THREE.MeshBasicMaterial({
-    color:0xe5e9e6,wireframe:true,transparent:true,opacity:.92,side:THREE.DoubleSide
-  });
-  const geo=new THREE.SphereGeometry(1,18,12);
-  headShell=new THREE.Mesh(geo,solidMat);
-  headWire=new THREE.Mesh(geo.clone(),wireMat);
-  headShell.renderOrder=10;
-  headWire.renderOrder=11;
+  const geo=new THREE.SphereGeometry(1,22,16);
+  headShell=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x030405}));
+  headWire=new THREE.Mesh(geo.clone(),new THREE.MeshBasicMaterial({
+    color:0xe6e9e6,wireframe:true,transparent:true,opacity:.94
+  }));
   scene.add(headShell,headWire);
 
-  // derive stable head proportions from neck-head spacing.
   const hp=new THREE.Vector3(), np=new THREE.Vector3();
-  bones.head?.getWorldPosition(hp); bones.neck?.getWorldPosition(np);
-  const h=Math.max(hp.distanceTo(np)*2.2,.18);
-  const w=h*.72, depth=h*.78;
-  headShell.scale.set(w*.54,h*.54,depth*.54);
-  headWire.scale.copy(headShell.scale).multiplyScalar(1.015);
+  bones.head.getWorldPosition(hp); bones.neck.getWorldPosition(np);
+  const h=Math.max(hp.distanceTo(np)*2.25,.18);
+  headShell.scale.set(h*.37,h*.50,h*.40);
+  headWire.scale.copy(headShell.scale).multiplyScalar(1.012);
 }
 function syncHeadShell(){
   if(!headShell||!bones.head)return;
   const p=new THREE.Vector3(), q=new THREE.Quaternion();
   bones.head.getWorldPosition(p);
   bones.head.getWorldQuaternion(q);
-  // shift slightly upward from head-bone origin toward the skull centre.
   const up=new THREE.Vector3(0,1,0).applyQuaternion(q);
   p.addScaledVector(up,.055);
   headShell.position.copy(p); headWire.position.copy(p);
@@ -215,39 +274,20 @@ function applyPose(name){
   if(!root)return;
   currentPose=name;
   resetPose();
-  armsDown();
 
-  if(name==='descent'){
-    qOffset('hips',8*d,0,0);
-    qOffset('lThigh',-38*d,0,3*d); qOffset('rThigh',-38*d,0,-3*d);
-    qOffset('lCalf',72*d,0,0); qOffset('rCalf',72*d,0,0);
-    qOffset('lFoot',-26*d,0,0); qOffset('rFoot',-26*d,0,0);
-    pOffset('hips',0,-.06,0);
+  if(name==='stand'){
+    poseLegsStand(); poseTorsoUpright(); poseArmsAtSides();
+  } else if(name==='descent'){
+    poseLegsDescent(); poseTorsoUpright(); poseArmsAtSides();
+  } else if(name==='seiza'){
+    poseLegsSeiza(); poseTorsoUpright(); poseHandsOnThighs();
+  } else if(name==='hands'){
+    poseLegsSeiza(); poseTorsoLean(); poseHandsApproachFloor();
+  } else if(name==='dogeza'){
+    poseLegsSeiza(); poseTorsoDogeza(); poseHandsDogeza();
   }
 
-  if(name==='seiza'||name==='hands'||name==='dogeza'){
-    qOffset('hips',5*d,0,0);
-    qOffset('lThigh',-92*d,0,4*d); qOffset('rThigh',-92*d,0,-4*d);
-    qOffset('lCalf',138*d,0,0); qOffset('rCalf',138*d,0,0);
-    qOffset('lFoot',-52*d,0,0); qOffset('rFoot',-52*d,0,0);
-    pOffset('hips',0,-.16,.01);
-  }
-
-  if(name==='hands'){
-    qOffset('spine',18*d,0,0); qOffset('spine1',12*d,0,0); qOffset('spine2',8*d,0,0);
-    qOffset('neck',-8*d,0,0); qOffset('head',-5*d,0,0);
-    armsForward(.68);
-  }
-
-  if(name==='dogeza'){
-    qOffset('spine',46*d,0,0); qOffset('spine1',30*d,0,0); qOffset('spine2',17*d,0,0);
-    qOffset('neck',-18*d,0,0); qOffset('head',-14*d,0,0);
-    armsForward(1);
-    pOffset('hips',0,-.20,.05);
-  }
-
-  root.updateMatrixWorld(true);
-  const box=alignPoseToFloor();
+  const box=alignToFloorAndCenter();
   fitCamera(name,box);
   syncHeadShell();
 
@@ -259,23 +299,18 @@ function normalizeModel(obj){
   obj.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(obj);
   const size=new THREE.Vector3(); box.getSize(size);
-  const h=Math.max(size.y,.001);
-  obj.scale.setScalar(1.82/h);
+  obj.scale.setScalar(1.82/Math.max(size.y,.001));
   obj.updateMatrixWorld(true);
-  const box2=new THREE.Box3().setFromObject(obj);
-  const c=new THREE.Vector3(); box2.getCenter(c);
-  obj.position.x-=c.x;
-  obj.position.z-=c.z;
-  obj.position.y-=box2.min.y;
+  const b2=new THREE.Box3().setFromObject(obj);
+  const c=new THREE.Vector3(); b2.getCenter(c);
+  obj.position.x-=c.x; obj.position.z-=c.z; obj.position.y-=b2.min.y;
   obj.updateMatrixWorld(true);
 }
 
 const modelURL='https://cdn.jsdelivr.net/gh/UMRAM-Bilkent/supine-human-model@main/assets/human.glb';
 new GLTFLoader().load(modelURL,gltf=>{
   root=gltf.scene;
-  if(gltf.animations?.length){
-    root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton)o.skeleton.pose(); });
-  }
+  root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton)o.skeleton.pose(); });
   normalizeModel(root);
 
   let skinned=0;
@@ -283,11 +318,7 @@ new GLTFLoader().load(modelURL,gltf=>{
     if(!o.isMesh)return;
     if(o.isSkinnedMesh)skinned++;
     o.material=new THREE.MeshBasicMaterial({
-      color:0xe5e9e6,
-      wireframe:true,
-      transparent:true,
-      opacity:.66,
-      side:THREE.DoubleSide
+      color:0xe3e7e4,wireframe:true,transparent:true,opacity:.58,side:THREE.DoubleSide
     });
     o.frustumCulled=false;
   });
@@ -298,35 +329,29 @@ new GLTFLoader().load(modelURL,gltf=>{
   helper=new THREE.SkeletonHelper(root);
   helper.material.color.set(0xdf4936);
   helper.material.transparent=true;
-  helper.material.opacity=.20;
+  helper.material.opacity=.16;
   anchor.add(helper);
 
   makeHeadShell();
   applyPose('stand');
-
   boneStatus.textContent += ' / SKIN '+skinned;
+
   loading.classList.add('hide');
-  setTimeout(()=>loading.remove(),500);
+  setTimeout(()=>loading.remove(),450);
 },undefined,err=>{
   console.error(err);
   loading.innerHTML='<div id="error">MODEL LOAD FAILED<br><small>'+String(err.message||err)+'</small></div>';
 });
 
 document.querySelectorAll('.pose').forEach(btn=>{
-  btn.addEventListener('click',e=>{
-    e.preventDefault();
-    if(root)applyPose(btn.dataset.pose);
-  });
+  btn.addEventListener('click',e=>{e.preventDefault();if(root)applyPose(btn.dataset.pose)});
 });
 
 function resize(){
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
-  if(root){
-    const box=updateSkinnedBounds();
-    fitCamera(currentPose,box);
-  }
+  if(root)fitCamera(currentPose,updateBounds());
 }
 addEventListener('resize',resize);
 
