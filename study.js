@@ -9,11 +9,9 @@ const poseReadout=document.querySelector('#poseReadout');
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x030405);
-scene.fog=new THREE.FogExp2(0x030405,.055);
+scene.fog=new THREE.FogExp2(0x030405,.045);
 
-const camera=new THREE.PerspectiveCamera(34,innerWidth/innerHeight,.01,100);
-camera.position.set(3.0,1.85,4.6);
-
+const camera=new THREE.PerspectiveCamera(32,innerWidth/innerHeight,.01,100);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
@@ -24,25 +22,27 @@ const controls=new OrbitControls(camera,renderer.domElement);
 controls.enableDamping=true;
 controls.dampingFactor=.08;
 controls.enablePan=false;
-controls.minDistance=2.3;
-controls.maxDistance=7;
-controls.target.set(0,1.0,0);
+controls.minDistance=1.6;
+controls.maxDistance=8;
 
-const grid=new THREE.GridHelper(14,28,0x3b4140,0x171b1b);
+const grid=new THREE.GridHelper(14,28,0x4b514f,0x151919);
 grid.material.transparent=true;
-grid.material.opacity=.52;
-grid.position.y=0;
+grid.material.opacity=.46;
 scene.add(grid);
 
-const axesMat=new THREE.LineBasicMaterial({color:0xdf4936,transparent:true,opacity:.34});
-const axisPts=[
+const axesMat=new THREE.LineBasicMaterial({color:0xdf4936,transparent:true,opacity:.30});
+const axisGeo=new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(-3,0,0),new THREE.Vector3(3,0,0),
   new THREE.Vector3(0,0,-3),new THREE.Vector3(0,0,3)
-];
-const axisGeo=new THREE.BufferGeometry().setFromPoints(axisPts);
+]);
 scene.add(new THREE.LineSegments(axisGeo,axesMat));
 
-let root=null, bones={}, base={}, helper=null;
+const anchor=new THREE.Group();
+scene.add(anchor);
+
+let root=null, bones={}, base={}, helper=null, headShell=null, headWire=null;
+let currentPose='stand';
+
 const aliases={
   hips:['Hips','hips','pelvis'],
   spine:['Spine','spine','spine_01'],
@@ -80,6 +80,7 @@ function findByAliases(list){
   });
   return hit;
 }
+
 function captureBones(){
   for(const [k,list] of Object.entries(aliases)){
     const b=findByAliases(list);
@@ -90,6 +91,7 @@ function captureBones(){
   }
   boneStatus.textContent='BONES '+Object.keys(bones).length+'/'+Object.keys(aliases).length;
 }
+
 function qOffset(key,x=0,y=0,z=0){
   const b=bones[key]; if(!b)return;
   b.quaternion.copy(base[key].q);
@@ -108,36 +110,147 @@ function resetPose(){
 }
 const d=Math.PI/180;
 
-// Offsets are intentionally conservative. This page is a pose study, not final gameplay.
+function armsDown(){
+  qOffset('lArm',-78*d,0,0);
+  qOffset('rArm', 78*d,0,0);
+}
+function armsForward(amount=1){
+  // mirrored arm bones need mirrored X rotations.
+  qOffset('lArm',(-78+88*amount)*d,0, 12*d);
+  qOffset('rArm',( 78-88*amount)*d,0,-12*d);
+  qOffset('lFore',-36*amount*d,0,-4*d);
+  qOffset('rFore', 36*amount*d,0, 4*d);
+}
+
+function updateSkinnedBounds(){
+  if(!root)return new THREE.Box3();
+  root.updateMatrixWorld(true);
+  const box=new THREE.Box3();
+  let any=false;
+  root.traverse(o=>{
+    if(o.isSkinnedMesh){
+      o.computeBoundingBox();
+      const b=o.boundingBox.clone().applyMatrix4(o.matrixWorld);
+      box.union(b); any=true;
+    } else if(o.isMesh && o.geometry){
+      if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
+      if(o.geometry.boundingBox){
+        box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); any=true;
+      }
+    }
+  });
+  return any?box:new THREE.Box3().setFromObject(root);
+}
+
+function alignPoseToFloor(){
+  anchor.position.set(0,0,0);
+  anchor.updateMatrixWorld(true);
+  let box=updateSkinnedBounds();
+  if(box.isEmpty())return box;
+  const center=new THREE.Vector3(); box.getCenter(center);
+  anchor.position.set(-center.x,-box.min.y,-center.z);
+  anchor.updateMatrixWorld(true);
+  box=updateSkinnedBounds();
+  return box;
+}
+
+const cameraDirs={
+  stand:new THREE.Vector3(2.7,1.15,4.5),
+  descent:new THREE.Vector3(2.8,1.15,4.3),
+  seiza:new THREE.Vector3(3.1,1.00,3.7),
+  hands:new THREE.Vector3(3.4,.85,3.2),
+  dogeza:new THREE.Vector3(4.5,.72,.55)
+};
+
+function fitCamera(name,box){
+  const center=new THREE.Vector3(); box.getCenter(center);
+  const size=new THREE.Vector3(); box.getSize(size);
+  const radius=Math.max(size.length()*.5,.7);
+  const vFov=THREE.MathUtils.degToRad(camera.fov);
+  const distV=radius/Math.sin(vFov*.5);
+  const hFov=2*Math.atan(Math.tan(vFov*.5)*camera.aspect);
+  const distH=radius/Math.sin(Math.max(hFov*.5,.12));
+  const dist=Math.max(distV,distH)*1.08;
+  const dir=(cameraDirs[name]||cameraDirs.stand).clone().normalize();
+  const target=center.clone();
+  target.y=Math.max(center.y, size.y*.40);
+  camera.position.copy(target).add(dir.multiplyScalar(dist));
+  controls.target.copy(target);
+  controls.update();
+}
+
+function makeHeadShell(){
+  const solidMat=new THREE.MeshBasicMaterial({color:0x030405,side:THREE.DoubleSide});
+  const wireMat=new THREE.MeshBasicMaterial({
+    color:0xe5e9e6,wireframe:true,transparent:true,opacity:.92,side:THREE.DoubleSide
+  });
+  const geo=new THREE.SphereGeometry(1,18,12);
+  headShell=new THREE.Mesh(geo,solidMat);
+  headWire=new THREE.Mesh(geo.clone(),wireMat);
+  headShell.renderOrder=10;
+  headWire.renderOrder=11;
+  scene.add(headShell,headWire);
+
+  // derive stable head proportions from neck-head spacing.
+  const hp=new THREE.Vector3(), np=new THREE.Vector3();
+  bones.head?.getWorldPosition(hp); bones.neck?.getWorldPosition(np);
+  const h=Math.max(hp.distanceTo(np)*2.2,.18);
+  const w=h*.72, depth=h*.78;
+  headShell.scale.set(w*.54,h*.54,depth*.54);
+  headWire.scale.copy(headShell.scale).multiplyScalar(1.015);
+}
+function syncHeadShell(){
+  if(!headShell||!bones.head)return;
+  const p=new THREE.Vector3(), q=new THREE.Quaternion();
+  bones.head.getWorldPosition(p);
+  bones.head.getWorldQuaternion(q);
+  // shift slightly upward from head-bone origin toward the skull centre.
+  const up=new THREE.Vector3(0,1,0).applyQuaternion(q);
+  p.addScaledVector(up,.055);
+  headShell.position.copy(p); headWire.position.copy(p);
+  headShell.quaternion.copy(q); headWire.quaternion.copy(q);
+}
+
 function applyPose(name){
+  if(!root)return;
+  currentPose=name;
   resetPose();
+  armsDown();
+
   if(name==='descent'){
-    qOffset('hips',10*d,0,0);
-    qOffset('lThigh',-42*d,0,3*d); qOffset('rThigh',-42*d,0,-3*d);
-    qOffset('lCalf',76*d,0,0); qOffset('rCalf',76*d,0,0);
-    qOffset('lFoot',-28*d,0,0); qOffset('rFoot',-28*d,0,0);
-    pOffset('hips',0,-.08,0);
+    qOffset('hips',8*d,0,0);
+    qOffset('lThigh',-38*d,0,3*d); qOffset('rThigh',-38*d,0,-3*d);
+    qOffset('lCalf',72*d,0,0); qOffset('rCalf',72*d,0,0);
+    qOffset('lFoot',-26*d,0,0); qOffset('rFoot',-26*d,0,0);
+    pOffset('hips',0,-.06,0);
   }
+
   if(name==='seiza'||name==='hands'||name==='dogeza'){
-    qOffset('hips',6*d,0,0);
-    qOffset('lThigh',-88*d,0,5*d); qOffset('rThigh',-88*d,0,-5*d);
-    qOffset('lCalf',132*d,0,0); qOffset('rCalf',132*d,0,0);
-    qOffset('lFoot',-48*d,0,0); qOffset('rFoot',-48*d,0,0);
-    pOffset('hips',0,-.18,.02);
+    qOffset('hips',5*d,0,0);
+    qOffset('lThigh',-92*d,0,4*d); qOffset('rThigh',-92*d,0,-4*d);
+    qOffset('lCalf',138*d,0,0); qOffset('rCalf',138*d,0,0);
+    qOffset('lFoot',-52*d,0,0); qOffset('rFoot',-52*d,0,0);
+    pOffset('hips',0,-.16,.01);
   }
-  if(name==='hands'||name==='dogeza'){
-    qOffset('spine',28*d,0,0); qOffset('spine1',18*d,0,0); qOffset('spine2',12*d,0,0);
-    qOffset('neck',-12*d,0,0); qOffset('head',-8*d,0,0);
-    qOffset('lArm',72*d,0,18*d); qOffset('rArm',72*d,0,-18*d);
-    qOffset('lFore',-32*d,0,0); qOffset('rFore',-32*d,0,0);
+
+  if(name==='hands'){
+    qOffset('spine',18*d,0,0); qOffset('spine1',12*d,0,0); qOffset('spine2',8*d,0,0);
+    qOffset('neck',-8*d,0,0); qOffset('head',-5*d,0,0);
+    armsForward(.68);
   }
+
   if(name==='dogeza'){
-    qOffset('spine',52*d,0,0); qOffset('spine1',34*d,0,0); qOffset('spine2',18*d,0,0);
-    qOffset('neck',-24*d,0,0); qOffset('head',-18*d,0,0);
-    qOffset('lArm',92*d,0,14*d); qOffset('rArm',92*d,0,-14*d);
-    qOffset('lFore',-48*d,0,0); qOffset('rFore',-48*d,0,0);
-    pOffset('hips',0,-.23,.07);
+    qOffset('spine',46*d,0,0); qOffset('spine1',30*d,0,0); qOffset('spine2',17*d,0,0);
+    qOffset('neck',-18*d,0,0); qOffset('head',-14*d,0,0);
+    armsForward(1);
+    pOffset('hips',0,-.20,.05);
   }
+
+  root.updateMatrixWorld(true);
+  const box=alignPoseToFloor();
+  fitCamera(name,box);
+  syncHeadShell();
+
   poseReadout.innerHTML='POSE <b>'+name.toUpperCase()+'</b>';
   document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose===name));
 }
@@ -147,8 +260,7 @@ function normalizeModel(obj){
   const box=new THREE.Box3().setFromObject(obj);
   const size=new THREE.Vector3(); box.getSize(size);
   const h=Math.max(size.y,.001);
-  const s=1.82/h;
-  obj.scale.setScalar(s);
+  obj.scale.setScalar(1.82/h);
   obj.updateMatrixWorld(true);
   const box2=new THREE.Box3().setFromObject(obj);
   const c=new THREE.Vector3(); box2.getCenter(c);
@@ -162,33 +274,36 @@ const modelURL='https://cdn.jsdelivr.net/gh/UMRAM-Bilkent/supine-human-model@mai
 new GLTFLoader().load(modelURL,gltf=>{
   root=gltf.scene;
   if(gltf.animations?.length){
-    root.traverse(o=>{
-      if(o.isSkinnedMesh && o.skeleton)o.skeleton.pose();
-    });
+    root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton)o.skeleton.pose(); });
   }
   normalizeModel(root);
+
   let skinned=0;
   root.traverse(o=>{
-    if(o.isMesh){
-      if(o.isSkinnedMesh)skinned++;
-      o.material=new THREE.MeshBasicMaterial({
-        color:0xe5e9e6,
-        wireframe:true,
-        transparent:true,
-        opacity:.78,
-        side:THREE.DoubleSide
-      });
-      o.frustumCulled=false;
-    }
+    if(!o.isMesh)return;
+    if(o.isSkinnedMesh)skinned++;
+    o.material=new THREE.MeshBasicMaterial({
+      color:0xe5e9e6,
+      wireframe:true,
+      transparent:true,
+      opacity:.66,
+      side:THREE.DoubleSide
+    });
+    o.frustumCulled=false;
   });
-  scene.add(root);
+
+  anchor.add(root);
   captureBones();
+
   helper=new THREE.SkeletonHelper(root);
   helper.material.color.set(0xdf4936);
   helper.material.transparent=true;
-  helper.material.opacity=.25;
-  scene.add(helper);
+  helper.material.opacity=.20;
+  anchor.add(helper);
+
+  makeHeadShell();
   applyPose('stand');
+
   boneStatus.textContent += ' / SKIN '+skinned;
   loading.classList.add('hide');
   setTimeout(()=>loading.remove(),500);
@@ -198,19 +313,26 @@ new GLTFLoader().load(modelURL,gltf=>{
 });
 
 document.querySelectorAll('.pose').forEach(btn=>{
-  btn.addEventListener('click',e=>{e.preventDefault();if(root)applyPose(btn.dataset.pose)});
+  btn.addEventListener('click',e=>{
+    e.preventDefault();
+    if(root)applyPose(btn.dataset.pose);
+  });
 });
 
 function resize(){
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(root){
+    const box=updateSkinnedBounds();
+    fitCamera(currentPose,box);
+  }
 }
 addEventListener('resize',resize);
 
-const clock=new THREE.Clock();
 function tick(){
   requestAnimationFrame(tick);
+  syncHeadShell();
   controls.update();
   renderer.render(scene,camera);
 }
