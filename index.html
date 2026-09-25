@@ -3,109 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#f1efe8">
+<meta name="theme-color" content="#f4f1e9">
 <title>DOGEZA — FORM IS EVERYTHING.</title>
-<style>
-  :root{--bg:#f1efe8;--ink:#111214;--muted:#7b7a74;--accent:#e23b2f;--line:#cbc8bd}
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif}
-  body{touch-action:none;user-select:none;-webkit-user-select:none}
-  #app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto;padding:env(safe-area-inset-top) 18px env(safe-area-inset-bottom)}
-  header{padding:18px 6px 0;display:flex;align-items:flex-start;justify-content:space-between;letter-spacing:.12em}
-  .brand{font-size:12px;font-weight:700}.phase{font-size:12px;color:var(--muted)}
-  main{position:relative;display:flex;align-items:center;justify-content:center;min-height:0}
-  footer{padding:0 6px 22px;min-height:86px;display:flex;align-items:flex-end;justify-content:space-between}
-  .hint{font-size:11px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
-  .best{font-size:11px;color:var(--muted);letter-spacing:.1em}
-  .screen{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column}.screen.active{display:flex}
-  #title h1{margin:0;font-size:clamp(52px,18vw,112px);letter-spacing:-.06em;line-height:.82}
-  #title .tag{margin-top:22px;font-size:12px;letter-spacing:.26em;font-weight:700}
-  #title .tap{position:absolute;bottom:7%;font-size:11px;color:var(--muted);letter-spacing:.18em}
-  #title .slash{width:56px;height:4px;background:var(--accent);margin-top:26px}
-  #playfield{width:min(92vw,520px);height:min(60vh,560px);position:relative}
-  #floor{position:absolute;left:5%;right:5%;bottom:11%;height:2px;background:var(--ink)}
-  #human{position:absolute;left:50%;bottom:calc(11% + 2px);width:170px;height:250px;transform:translateX(-50%);transform-origin:50% 100%}
-  .head{position:absolute;width:46px;height:46px;border:4px solid var(--ink);border-radius:50%;left:62px;top:17px;background:var(--bg)}
-  .body{position:absolute;width:6px;height:112px;background:var(--ink);left:82px;top:60px;transform-origin:50% 100%}
-  .arm{position:absolute;width:5px;height:84px;background:var(--ink);left:86px;top:77px;transform-origin:50% 8%;transform:rotate(23deg)}
-  .leg1,.leg2{position:absolute;width:6px;height:92px;background:var(--ink);left:81px;top:160px;transform-origin:50% 0}
-  .leg1{transform:rotate(8deg)}.leg2{transform:rotate(-8deg)}
-  .shadow{position:absolute;width:110px;height:8px;border-radius:50%;background:#d8d4c8;left:30px;bottom:-4px}
-  #meter{position:absolute;left:7%;right:7%;top:10%;height:54px}
-  #meterLine{position:absolute;left:0;right:0;top:25px;height:2px;background:var(--line)}
-  #sweet{position:absolute;top:16px;height:20px;background:rgba(226,59,47,.13);border-left:2px solid var(--accent);border-right:2px solid var(--accent)}
-  #cursor{position:absolute;top:8px;width:3px;height:36px;background:var(--ink);transform:translateX(-50%)}
-  #metric{position:absolute;top:86px;left:0;right:0;text-align:center;font-variant-numeric:tabular-nums}
-  #metric .big{font-size:clamp(46px,14vw,86px);font-weight:700;letter-spacing:-.05em}
-  #metric .small{font-size:11px;letter-spacing:.18em;color:var(--muted);margin-top:4px}
-  #eyeStage{position:absolute;inset:0;display:none;align-items:center;justify-content:center}
-  .eyeWrap{display:flex;gap:26px;transform:translateY(-6%)}
-  .eye{width:118px;height:70px;border:5px solid var(--ink);border-radius:60% 60% 48% 48% / 70% 70% 35% 35%;position:relative;overflow:hidden;background:#faf9f3}
-  .pupil{position:absolute;width:24px;height:24px;border-radius:50%;background:var(--ink);left:50%;top:50%;transform:translate(-50%,-50%);z-index:2}
-  .eye::after{content:"";position:absolute;width:12px;height:12px;border:2px solid var(--accent);border-radius:50%;left:50%;top:61%;transform:translate(-50%,-50%);opacity:.7;z-index:1}
-  .lid{position:absolute;left:-8px;right:-8px;top:-44px;height:62px;background:var(--bg);border-bottom:4px solid var(--ink);border-radius:50%}
-  #eyeLabel{position:absolute;top:14%;left:0;right:0;text-align:center;font-size:12px;letter-spacing:.28em;font-weight:700}
-  #eyeSub{position:absolute;bottom:13%;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.18em;color:var(--muted)}
-  #result{gap:20px;text-align:center}
-  #result .score{font-size:clamp(74px,25vw,152px);font-weight:700;letter-spacing:-.08em;line-height:.85}
-  #result .word{font-size:12px;letter-spacing:.28em;font-weight:700}
-  #breakdown{width:min(82vw,360px);margin-top:18px}
-  .row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.12em}
-  .row span:last-child{font-variant-numeric:tabular-nums}
-  #again{margin-top:12px;font-size:11px;color:var(--muted);letter-spacing:.18em}
-  #flash{position:fixed;inset:0;pointer-events:none;background:var(--accent);opacity:0;mix-blend-mode:multiply}
-  #micro{position:absolute;top:2%;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.18em;color:var(--muted);min-height:16px}
-</style>
+<link rel="stylesheet" href="style.css?v=r2">
 </head>
 <body>
 <div id="app">
-<header><div class="brand">DOGEZA</div><div class="phase" id="phaseLabel">FORM IS EVERYTHING.</div></header>
-<main>
-<section id="title" class="screen active"><h1>DOGEZA</h1><div class="slash"></div><div class="tag">FORM IS EVERYTHING.</div><div class="tap">TAP TO BEGIN</div></section>
-<section id="game" class="screen"><div id="playfield">
-<div id="micro"></div>
-<div id="meter"><div id="meterLine"></div><div id="sweet"></div><div id="cursor"></div></div>
-<div id="metric"><div class="big" id="metricBig">—</div><div class="small" id="metricSmall">TAP AT THE CLEANEST MOMENT</div></div>
-<div id="human"><div class="shadow"></div><div class="head"></div><div class="body"></div><div class="arm"></div><div class="leg1"></div><div class="leg2"></div></div>
-<div id="floor"></div>
-<div id="eyeStage"><div id="eyeLabel">EYES</div><div class="eyeWrap"><div class="eye"><div class="lid"></div><div class="pupil p1"></div></div><div class="eye"><div class="lid"></div><div class="pupil p2"></div></div></div><div id="eyeSub">STOP THE DRIFT.</div></div>
-</div></section>
-<section id="result" class="screen"><div class="score" id="totalScore">0.0</div><div class="word" id="verdict">FORM COLLAPSED.</div><div id="breakdown"><div class="row"><span>KNEES</span><span id="kneesScore">0.0</span></div><div class="row"><span>HEAD</span><span id="headScore">0.0</span></div><div class="row"><span>EYES</span><span id="eyesScore">0.0</span></div></div><div id="again">TAP TO APOLOGIZE AGAIN</div></section>
-</main>
-<footer><div class="hint" id="hint"></div><div class="best" id="best">BEST —</div></footer>
+  <section class="screen active" id="titleScreen">
+    <div class="microTop"><span>01 / FORM STUDY</span><span class="muted">PORTRAIT SYSTEM</span></div>
+    <div class="titleBlock"><h1>DOGEZA</h1><div class="tag">FORM IS EVERYTHING.</div></div>
+    <div class="titleFigureWrap" id="titleFigureWrap">
+      <svg id="titleFigure" viewBox="0 0 360 250" aria-hidden="true"></svg>
+      <div class="titleScan"></div>
+    </div>
+    <div class="titleBottom"><span class="tap">TAP TO BEGIN</span><span class="best" id="bestLabel">BEST —</span></div>
+  </section>
+
+  <section class="screen" id="gameScreen">
+    <div id="stage">
+      <div class="microTop"><span id="runCode">FORM / 000</span><span class="muted" id="statusCode">READY</span></div>
+      <div class="telemetry" id="telemetry"><i class="v"></i><i class="v"></i><i class="v"></i><i class="h"></i><i class="h"></i><i class="h"></i></div>
+      <svg id="figureSvg" viewBox="0 0 360 560" aria-hidden="true">
+        <line id="floorLine" x1="28" x2="332" y1="486" y2="486"></line>
+        <g class="far" id="farBody"></g>
+        <g id="nearBody"></g>
+        <g id="analysisLayer"></g>
+      </svg>
+      <div id="eyesLayer">
+        <div class="eyeField" id="eyeField">
+          <div class="focusRing r3"></div><div class="focusRing r2"></div><div class="focusRing r1"></div>
+          <div class="focusAxis x"></div><div class="focusAxis y"></div><div class="focusVectors"></div>
+          <div class="eyeOutline left"><div class="iris"><div class="ghost"></div></div></div>
+          <div class="eyeOutline right"><div class="iris"><div class="ghost"></div></div></div>
+        </div>
+        <div class="eyeReadout"><span>OCULAR CONVERGENCE</span><span id="eyeReadout">Δ —</span></div>
+      </div>
+      <div class="telemetryPanel" id="telemetryPanel">
+        <div class="metric"><span id="m1Label">ANGLE</span><b id="m1Value">—</b></div>
+        <div class="metric right"><span id="m2Label">VELOCITY</span><b id="m2Value">—</b></div>
+      </div>
+      <div class="cue" id="cue"></div>
+      <div id="transitionMask"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="resultScreen">
+    <div class="resultWrap">
+      <div class="microTop"><span>FORM ANALYSIS / FINAL</span><span class="muted" id="bestResult"></span></div>
+      <div class="totalLabel">TOTAL FORM INDEX</div>
+      <div class="totalScore" id="totalScore">00.00</div>
+      <div class="verdict" id="verdict"></div>
+      <div class="phaseSummary" id="phaseSummary">
+        <div class="phaseRow"><span>KNEES</span><span id="sumKnees">—</span></div>
+        <div class="phaseRow"><span>HEAD</span><span id="sumHead">—</span></div>
+        <div class="phaseRow"><span>EYES</span><span id="sumEyes">—</span></div>
+      </div>
+      <div class="resultHint" id="resultHint"></div>
+    </div>
+    <div class="details" id="details">
+      <h2>FORM ANALYSIS</h2>
+      <div id="detailContent"></div>
+      <div class="resultHint">TAP TO CLOSE</div>
+    </div>
+    <div id="perfectWord">DOGEZA.</div>
+  </section>
 </div>
-<div id="flash"></div>
-<script>
-(() => {
-  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-  const title=$('#title'), game=$('#game'), result=$('#result');
-  const phaseLabel=$('#phaseLabel'), hint=$('#hint'), bestEl=$('#best');
-  const human=$('#human'), body=$('.body'), head=$('.head'), arm=$('.arm'), leg1=$('.leg1'), leg2=$('.leg2');
-  const meter=$('#meter'), sweet=$('#sweet'), cursor=$('#cursor');
-  const metricBig=$('#metricBig'), metricSmall=$('#metricSmall'), micro=$('#micro');
-  const eyeStage=$('#eyeStage'), pupils=$$('.pupil'), flash=$('#flash');
-  let state='title', phase=null, raf=0, phaseStart=0, holding=false, headProgress=0, scores={knees:0,head:0,eyes:0};
-  let best=Number(localStorage.getItem('dogeza_best')||0);
-  function setBest(){bestEl.textContent=best?`BEST ${best.toFixed(1)}`:'BEST —'} setBest();
-  function show(screen){[title,game,result].forEach(x=>x.classList.remove('active'));screen.classList.add('active')}
-  function tone(freq=420,dur=.05,type='sine',gain=.035){try{const ctx=tone.ctx||(tone.ctx=new (window.AudioContext||window.webkitAudioContext)());const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.value=freq;g.gain.value=gain;o.connect(g);g.connect(ctx.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur);o.stop(ctx.currentTime+dur)}catch(e){}}
-  function pulse(){flash.animate([{opacity:.16},{opacity:0}],{duration:130,easing:'ease-out'});if(navigator.vibrate)navigator.vibrate(12)}
-  function resetPose(){human.style.transform='translateX(-50%) translateY(0) rotate(0deg)';body.style.transform='rotate(0deg)';head.style.transform='translate(0,0) rotate(0deg)';arm.style.transform='rotate(23deg)';leg1.style.transform='rotate(8deg)';leg2.style.transform='rotate(-8deg)'}
-  function startGame(){cancelAnimationFrame(raf);scores={knees:0,head:0,eyes:0};holding=false;headProgress=0;state='playing';resetPose();eyeStage.style.display='none';meter.style.display='block';show(game);phaseKnees()}
-  function phaseKnees(){phase='knees';phaseStart=performance.now();phaseLabel.textContent='01 / KNEES';hint.textContent='TAP';metricBig.textContent='KNEES';metricSmall.textContent='TAP AT THE CLEANEST MOMENT';micro.textContent='';sweet.style.left='45%';sweet.style.width='10%';meter.style.display='block';resetPose();loop()}
-  function phaseHead(){phase='head';phaseStart=performance.now();phaseLabel.textContent='02 / HEAD';hint.textContent='HOLD / RELEASE';metricBig.textContent='18.0 mm';metricSmall.textContent='HOLD. RELEASE NEAR 3.0 mm';micro.textContent='';meter.style.display='none';holding=false;headProgress=0;human.style.transform='translateX(-50%) translateY(28px)';leg1.style.transform='rotate(72deg) translateY(5px)';leg2.style.transform='rotate(-72deg) translateY(5px)';body.style.transform='rotate(8deg)'}
-  function phaseEyes(){phase='eyes';phaseStart=performance.now();phaseLabel.textContent='03 / EYES';hint.textContent='TAP';meter.style.display='none';$('#metric').style.display='none';human.style.display='none';$('#floor').style.display='none';eyeStage.style.display='flex';micro.textContent='EYES DON’T LIE.';loop()}
-  function scoreFromError(err,width){const x=Math.min(1,Math.abs(err)/width);return Math.max(0,100*(1-x*x))}
-  function loop(now=performance.now()){if(state!=='playing')return;if(phase==='knees'){const t=(now-phaseStart)/1000,cyc=(t%1.4)/1.4,p=cyc<.5?cyc*2:2-cyc*2;cursor.style.left=`${p*100}%`;const bend=Math.max(0,1-Math.abs(p-.5)*2);human.style.transform=`translateX(-50%) translateY(${bend*12}px)`;raf=requestAnimationFrame(loop)}else if(phase==='head'){if(holding){const dt=Math.min(.028,(now-phaseStart)/1000);headProgress=Math.min(1,headProgress+.0125+dt*.003);const mm=18*(1-headProgress);metricBig.textContent=`${mm.toFixed(1)} mm`;const ang=8+headProgress*76;body.style.transform=`rotate(${ang}deg)`;head.style.transform=`translate(${headProgress*40}px,${headProgress*68}px) rotate(${ang*.15}deg)`;arm.style.transform=`rotate(${23+headProgress*56}deg)`;if(headProgress>=1){finishHead();return}}raf=requestAnimationFrame(loop)}else if(phase==='eyes'){const t=(now-phaseStart)/1000,x=Math.sin(t*4.55)*24+Math.sin(t*1.37)*7,y=Math.sin(t*3.10+1.2)*10+7;pupils.forEach((p,i)=>{p.style.transform=`translate(calc(-50% + ${x+(i?2:-2)}px), calc(-50% + ${y}px))`});raf=requestAnimationFrame(loop)}}
-  function onDown(e){if(e)e.preventDefault();if(state==='title'){tone(330,.05);startGame();return}if(state==='result'){tone(330,.05);startGame();return}if(state!=='playing')return;if(phase==='knees'){const left=parseFloat(cursor.style.left)||0,p=left/100,err=p-.5,sc=scoreFromError(err,.5);scores.knees=sc;tone(sc>92?740:sc>75?520:250,.055,'sine');pulse();micro.textContent=sc>96?'CLEAN.':sc>82?'CONTROLLED.':sc>60?'UNSTABLE.':'CLUMSY.';metricBig.textContent=sc.toFixed(1);metricSmall.textContent='KNEES';cancelAnimationFrame(raf);human.animate([{transform:human.style.transform},{transform:'translateX(-50%) translateY(30px)'}],{duration:250,easing:'cubic-bezier(.2,.8,.2,1)'});phase='transition';setTimeout(phaseHead,520)}else if(phase==='head'){if(!holding){holding=true;phaseStart=performance.now();tone(390,.04,'triangle',.025);loop()}}else if(phase==='eyes'){const r=pupils[0].getBoundingClientRect(),eye=pupils[0].parentElement.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,tx=eye.left+eye.width/2,ty=eye.top+eye.height*.61,dx=(cx-tx)/(eye.width*.32),dy=(cy-ty)/(eye.height*.32),dist=Math.sqrt(dx*dx+dy*dy),sc=Math.max(0,100*(1-Math.min(1,dist)**1.6));scores.eyes=sc;tone(sc>92?860:sc>75?610:220,.07,'sine');pulse();cancelAnimationFrame(raf);micro.textContent=sc>96?'SINCERE.':sc>82?'COMPOSED.':sc>60?'DISTRACTED.':'SUSPICIOUS.';phase='transition';setTimeout(showResult,700)}}
-  function onUp(e){if(e)e.preventDefault();if(state!=='playing'||phase!=='head'||!holding)return;finishHead()}
-  function finishHead(){holding=false;cancelAnimationFrame(raf);const mm=18*(1-headProgress),err=mm-3,sc=Math.max(0,100*(1-Math.min(1,Math.abs(err)/12)**1.8));scores.head=sc;metricBig.textContent=`${mm.toFixed(1)} mm`;metricSmall.textContent=sc>96?'BEAUTIFUL DEPTH.':sc>82?'ACCEPTABLE DEPTH.':mm<1?'TOO DEEP.':'INSUFFICIENT DEPTH.';micro.textContent=sc>96?'NO HESITATION.':sc>70?'CONTROLLED.':'FORM COMPROMISED.';tone(sc>92?790:sc>75?540:210,.07,'triangle');pulse();phase='transition';setTimeout(()=>{$('#metric').style.display='block';phaseEyes()},720)}
-  function showResult(){state='result';phase=null;$('#metric').style.display='block';human.style.display='block';$('#floor').style.display='block';eyeStage.style.display='none';const total=(scores.knees+scores.head+scores.eyes)/3;$('#totalScore').textContent=total.toFixed(1);$('#kneesScore').textContent=scores.knees.toFixed(1);$('#headScore').textContent=scores.head.toFixed(1);$('#eyesScore').textContent=scores.eyes.toFixed(1);let verdict='FORM COLLAPSED.';if(total>=98.5)verdict='TRANSCENDENT.';else if(total>=95)verdict='BEAUTIFUL.';else if(total>=90)verdict='MASTER FORM.';else if(total>=80)verdict='RESPECTABLE.';else if(total>=65)verdict='MORE REMORSE.';$('#verdict').textContent=verdict;if(total>best){best=total;localStorage.setItem('dogeza_best',best.toFixed(1));setBest();setTimeout(()=>tone(1040,.08,'sine',.035),80);setTimeout(()=>tone(1320,.12,'sine',.025),180)}phaseLabel.textContent='FORM IS EVERYTHING.';hint.textContent='';show(result)}
-  window.addEventListener('pointerdown',onDown,{passive:false});
-  window.addEventListener('pointerup',onUp,{passive:false});
-  window.addEventListener('pointercancel',onUp,{passive:false});
-  document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
-})();
-</script>
+<div id="landscape">PORTRAIT REQUIRED.</div>
+<script src="app.js?v=r2"></script>
 </body>
 </html>
