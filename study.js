@@ -223,11 +223,12 @@ function poseTorsoLean(){
 }
 
 function poseTorsoDogeza(){
-  // Pelvis stays back. Torso extends forward and descends as one continuous chain.
-  aimBone('spine','spine1',V(0,.34,.94));
-  aimBone('spine1','spine2',V(0,.18,.984));
-  aimBone('spine2','neck',V(0,.06,.998));
-  aimBone('neck','head',V(0,-.34,.94));
+  // Pelvis stays over the heels; the trunk progresses forward and down.
+  // Roll is locked by aimBone's anatomical side-frame constraint.
+  aimBone('spine','spine1',V(0,.16,.987));
+  aimBone('spine1','spine2',V(0,-.06,.998));
+  aimBone('spine2','neck',V(0,-.30,.954));
+  aimBone('neck','head',V(0,-.64,.768));
 }
 
 function poseHandsOnThighs(){
@@ -380,10 +381,10 @@ function qaSnapshot(name){
     noRoll:q.shoulder.sideAlignment>.92 && q.hip.sideAlignment>.92 && q.knee.sideAlignment>.90,
     bilateral:q.shoulder.upDelta<.08 && q.hip.upDelta<.08 && q.knee.upDelta<.08 && q.symmetry.handsUp<.10,
     dogezaGeometry:name!=='dogeza' || (
-      q.landmarks.headUp < q.landmarks.hipUp &&
-      q.landmarks.handUp < q.landmarks.hipUp &&
-      q.landmarks.headForward > q.landmarks.hipForward &&
-      q.landmarks.handForward > q.landmarks.kneeForward
+      q.landmarks.headUp < q.landmarks.hipUp - .06 &&
+      q.landmarks.handUp < q.landmarks.kneeUp + .14 &&
+      q.landmarks.headForward > q.landmarks.hipForward + .22 &&
+      q.landmarks.handForward > q.landmarks.kneeForward + .22
     )
   };
   q.pass.all=q.pass.noRoll&&q.pass.bilateral&&q.pass.dogezaGeometry;
