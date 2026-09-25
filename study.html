@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#030405">
+<title>DOGEZA — Human Form Study</title>
+<style>
+:root{--bg:#030405;--ink:#e8ebe7;--dim:#727a78;--accent:#df4936}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:"Arial Narrow","DIN Alternate",Arial,sans-serif;touch-action:none}
+#viewport{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+.hud{position:fixed;inset:0;pointer-events:none;padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 16px)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;font:600 9px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em}
+.brand{font:800 clamp(34px,10vw,56px)/.82 "Arial Narrow","DIN Alternate",Arial,sans-serif;letter-spacing:-.045em}
+.sub{margin-top:10px;font:600 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em;opacity:.55}
+.status{text-align:right;opacity:.45}
+.cross{position:absolute;left:50%;top:50%;width:11px;height:11px;transform:translate(-50%,-50%);opacity:.3}
+.cross:before,.cross:after{content:"";position:absolute;background:var(--accent)}
+.cross:before{left:5px;top:0;width:1px;height:11px}.cross:after{left:0;top:5px;width:11px;height:1px}
+.readout{position:absolute;left:18px;bottom:calc(env(safe-area-inset-bottom) + 82px);font:500 8px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;color:var(--dim)}
+.readout b{color:var(--ink);font-weight:500}
+.poses{pointer-events:auto;position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.pose{appearance:none;border:1px solid rgba(232,235,231,.16);background:rgba(3,4,5,.74);color:rgba(232,235,231,.55);height:42px;font:600 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}
+.pose.active{border-color:var(--accent);color:var(--ink)}
+.loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#030405;z-index:5;font:500 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.2em}
+.loading.hide{opacity:0;pointer-events:none;transition:opacity .45s}
+#error{color:#df4936;max-width:80vw;text-align:center;line-height:1.7}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="viewport"></div>
+<div class="loading" id="loading">LOADING HUMAN FORM</div>
+<div class="hud">
+  <div class="top">
+    <div><div class="brand">DOGEZA</div><div class="sub">HUMAN FORM STUDY / 02</div></div>
+    <div class="status"><div>SKINNED MESH</div><div id="boneStatus">BONES —</div></div>
+  </div>
+  <div class="cross"></div>
+  <div class="readout">
+    <div>MODEL <b>QUATERNIUS / CC0</b></div>
+    <div>RENDER <b>WIREFRAME + SKELETON</b></div>
+    <div>DRAG <b>ORBIT CAMERA</b></div>
+    <div id="poseReadout">POSE <b>STAND</b></div>
+  </div>
+  <div class="poses">
+    <button class="pose active" data-pose="stand">P0<br>STAND</button>
+    <button class="pose" data-pose="descent">P1<br>DESCENT</button>
+    <button class="pose" data-pose="seiza">P2<br>SEIZA</button>
+    <button class="pose" data-pose="hands">P3<br>HANDS</button>
+    <button class="pose" data-pose="dogeza">P4<br>DOGEZA</button>
+  </div>
+</div>
+<script type="module" src="study.js?v=1"></script>
+</body>
+</html>
