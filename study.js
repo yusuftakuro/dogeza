@@ -46,6 +46,7 @@ let bones={}, base={}, restFrames={}, currentPose='stand';
 const aliases={
   hips:['Hips'], spine:['Spine'], spine1:['Spine1'], spine2:['Spine2'],
   neck:['Neck'], head:['Head'], headTop:['HeadTop_End'],
+  lShoulder:['LeftShoulder'], rShoulder:['RightShoulder'],
   lArm:['LeftArm'], rArm:['RightArm'],
   lFore:['LeftForeArm'], rFore:['RightForeArm'],
   lHand:['LeftHand'], rHand:['RightHand'],
@@ -307,6 +308,76 @@ function syncHeadShell(){
   headShell.quaternion.copy(q); headWire.quaternion.copy(q);
 }
 
+function point(key){
+  const p=new THREE.Vector3();
+  if(bones[key])bones[key].getWorldPosition(p);
+  return p;
+}
+function qaSnapshot(name){
+  root.updateMatrixWorld(true);
+  const ls=point('lShoulder'), rs=point('rShoulder');
+  const lh=point('lThigh'), rh=point('rThigh');
+  const lk=point('lCalf'), rk=point('rCalf');
+  const la=point('lFoot'), ra=point('rFoot');
+  const lw=point('lHand'), rw=point('rHand');
+  const head=point('head'), hips=point('hips');
+
+  const axisCheck=(a,b)=>{
+    const v=b.clone().sub(a);
+    const len=Math.max(v.length(),1e-9);
+    v.divideScalar(len);
+    return {
+      xAlignment:+Math.abs(v.x).toFixed(4),
+      yDelta:+Math.abs(a.y-b.y).toFixed(4),
+      zDelta:+Math.abs(a.z-b.z).toFixed(4)
+    };
+  };
+  const q={
+    pose:name,
+    shoulder:axisCheck(ls,rs),
+    hip:axisCheck(lh,rh),
+    knee:axisCheck(lk,rk),
+    ankle:axisCheck(la,ra),
+    symmetry:{
+      handsY:+Math.abs(lw.y-rw.y).toFixed(4),
+      handsZ:+Math.abs(lw.z-rw.z).toFixed(4)
+    },
+    landmarks:{
+      headY:+head.y.toFixed(4),
+      hipY:+hips.y.toFixed(4),
+      handY:+((lw.y+rw.y)/2).toFixed(4),
+      kneeY:+((lk.y+rk.y)/2).toFixed(4),
+      headZ:+head.z.toFixed(4),
+      hipZ:+hips.z.toFixed(4),
+      handZ:+((lw.z+rw.z)/2).toFixed(4),
+      kneeZ:+((lk.z+rk.z)/2).toFixed(4)
+    }
+  };
+  q.pass={
+    noRoll:q.shoulder.xAlignment>.92 && q.hip.xAlignment>.92 && q.knee.xAlignment>.90,
+    bilateral:q.shoulder.yDelta<.08 && q.hip.yDelta<.08 && q.knee.yDelta<.08 && q.symmetry.handsY<.10,
+    dogezaGeometry:name!=='dogeza' || (
+      q.landmarks.headY < q.landmarks.hipY &&
+      q.landmarks.handY < q.landmarks.hipY &&
+      q.landmarks.headZ > q.landmarks.hipZ &&
+      q.landmarks.handZ > q.landmarks.kneeZ
+    )
+  };
+  q.pass.all=q.pass.noRoll&&q.pass.bilateral&&q.pass.dogezaGeometry;
+  window.__DOGEZA_QA__=q;
+
+  if(new URLSearchParams(location.search).get('qa')==='1'){
+    let pre=document.getElementById('qaData');
+    if(!pre){
+      pre=document.createElement('pre');
+      pre.id='qaData';
+      pre.style.cssText='position:fixed;left:8px;top:150px;z-index:99;background:#000d;color:#fff;font:10px/1.35 monospace;padding:8px;max-width:94vw;white-space:pre-wrap;pointer-events:none';
+      document.body.appendChild(pre);
+    }
+    pre.textContent=JSON.stringify(q,null,2);
+  }
+}
+
 function applyPose(name){
   if(!root)return;
   currentPose=name;
@@ -327,6 +398,7 @@ function applyPose(name){
   const box=alignToFloorAndCenter();
   fitCamera(name,box);
   syncHeadShell();
+  qaSnapshot(name);
 
   poseReadout.innerHTML='POSE <b>'+name.toUpperCase()+'</b>';
   document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose===name));
