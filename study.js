@@ -42,6 +42,7 @@ scene.add(anchor);
 
 let root=null, helper=null, headShell=null, headWire=null;
 let bones={}, base={}, restFrames={}, currentPose='stand';
+let bodySide=new THREE.Vector3(1,0,0), bodyUp=new THREE.Vector3(0,1,0), bodyForward=new THREE.Vector3(0,0,1);
 
 const aliases={
   hips:['Hips'], spine:['Spine'], spine1:['Spine1'], spine2:['Spine2'],
@@ -81,7 +82,24 @@ function captureBones(){
     }
   }
   root.updateMatrixWorld(true);
-  const worldSide=new THREE.Vector3(1,0,0);
+
+  const pos=k=>{
+    const p=new THREE.Vector3();
+    bones[k]?.getWorldPosition(p);
+    return p;
+  };
+  const ls=pos('lShoulder'), rs=pos('rShoulder');
+  const hips=pos('hips'), head=pos('head');
+  const lf=pos('lFoot'), rf=pos('rFoot'), lt=pos('lToe'), rt=pos('rToe');
+
+  bodyUp=head.clone().sub(hips).normalize();
+  bodySide=rs.clone().sub(ls);
+  bodySide.sub(bodyUp.clone().multiplyScalar(bodySide.dot(bodyUp))).normalize();
+  bodyForward=bodySide.clone().cross(bodyUp).normalize();
+
+  const footForward=lt.clone().sub(lf).add(rt.clone().sub(rf)).normalize();
+  if(bodyForward.dot(footForward)<0) bodyForward.negate();
+
   for(const [key,childKey] of Object.entries(childMap)){
     const b=bones[key], ch=bones[childKey];
     if(!b||!ch)continue;
@@ -91,18 +109,19 @@ function captureBones(){
     b.getWorldPosition(bp); ch.getWorldPosition(cp); b.getWorldQuaternion(bq);
 
     const dirWorld=cp.sub(bp).normalize();
-    let sideWorld=worldSide.clone().sub(dirWorld.clone().multiplyScalar(worldSide.dot(dirWorld)));
+    let sideWorld=bodySide.clone().sub(dirWorld.clone().multiplyScalar(bodySide.dot(dirWorld)));
     if(sideWorld.lengthSq()<1e-6){
-      sideWorld=new THREE.Vector3(0,0,1).sub(dirWorld.clone().multiplyScalar(dirWorld.z));
+      sideWorld=bodyForward.clone().sub(dirWorld.clone().multiplyScalar(bodyForward.dot(dirWorld)));
     }
     sideWorld.normalize();
     const normalWorld=sideWorld.clone().cross(dirWorld).normalize();
 
     const inv=bq.clone().invert();
-    const dirLocal=dirWorld.clone().applyQuaternion(inv).normalize();
-    const sideLocal=sideWorld.clone().applyQuaternion(inv).normalize();
-    const normalLocal=normalWorld.clone().applyQuaternion(inv).normalize();
-    restFrames[key]={dirLocal,sideLocal,normalLocal};
+    restFrames[key]={
+      dirLocal:dirWorld.clone().applyQuaternion(inv).normalize(),
+      sideLocal:sideWorld.clone().applyQuaternion(inv).normalize(),
+      normalLocal:normalWorld.clone().applyQuaternion(inv).normalize()
+    };
   }
   boneStatus.textContent='BONES '+Object.keys(bones).length+'/'+Object.keys(aliases).length;
 }
@@ -115,9 +134,12 @@ function resetPose(){
   }
   root.updateMatrixWorld(true);
 }
-const V=(x,y,z)=>new THREE.Vector3(x,y,z).normalize();
+const V=(x,y,z)=>bodySide.clone().multiplyScalar(x)
+  .add(bodyUp.clone().multiplyScalar(y))
+  .add(bodyForward.clone().multiplyScalar(z))
+  .normalize();
 
-function aimBone(key,childKey,targetDir,targetSideHint=new THREE.Vector3(1,0,0)){
+function aimBone(key,childKey,targetDir,targetSideHint=bodySide){
   const b=bones[key], c=bones[childKey], frame=restFrames[key];
   if(!b||!c||!frame)return;
   root.updateMatrixWorld(true);
@@ -326,10 +348,11 @@ function qaSnapshot(name){
     const v=b.clone().sub(a);
     const len=Math.max(v.length(),1e-9);
     v.divideScalar(len);
+    const d=a.clone().sub(b);
     return {
-      xAlignment:+Math.abs(v.x).toFixed(4),
-      yDelta:+Math.abs(a.y-b.y).toFixed(4),
-      zDelta:+Math.abs(a.z-b.z).toFixed(4)
+      sideAlignment:+Math.abs(v.dot(bodySide)).toFixed(4),
+      upDelta:+Math.abs(d.dot(bodyUp)).toFixed(4),
+      forwardDelta:+Math.abs(d.dot(bodyForward)).toFixed(4)
     };
   };
   const q={
@@ -339,28 +362,28 @@ function qaSnapshot(name){
     knee:axisCheck(lk,rk),
     ankle:axisCheck(la,ra),
     symmetry:{
-      handsY:+Math.abs(lw.y-rw.y).toFixed(4),
-      handsZ:+Math.abs(lw.z-rw.z).toFixed(4)
+      handsUp:+Math.abs(lw.clone().sub(rw).dot(bodyUp)).toFixed(4),
+      handsForward:+Math.abs(lw.clone().sub(rw).dot(bodyForward)).toFixed(4)
     },
     landmarks:{
-      headY:+head.y.toFixed(4),
-      hipY:+hips.y.toFixed(4),
-      handY:+((lw.y+rw.y)/2).toFixed(4),
-      kneeY:+((lk.y+rk.y)/2).toFixed(4),
-      headZ:+head.z.toFixed(4),
-      hipZ:+hips.z.toFixed(4),
-      handZ:+((lw.z+rw.z)/2).toFixed(4),
-      kneeZ:+((lk.z+rk.z)/2).toFixed(4)
+      headUp:+head.dot(bodyUp).toFixed(4),
+      hipUp:+hips.dot(bodyUp).toFixed(4),
+      handUp:+((lw.dot(bodyUp)+rw.dot(bodyUp))/2).toFixed(4),
+      kneeUp:+((lk.dot(bodyUp)+rk.dot(bodyUp))/2).toFixed(4),
+      headForward:+head.dot(bodyForward).toFixed(4),
+      hipForward:+hips.dot(bodyForward).toFixed(4),
+      handForward:+((lw.dot(bodyForward)+rw.dot(bodyForward))/2).toFixed(4),
+      kneeForward:+((lk.dot(bodyForward)+rk.dot(bodyForward))/2).toFixed(4)
     }
   };
   q.pass={
-    noRoll:q.shoulder.xAlignment>.92 && q.hip.xAlignment>.92 && q.knee.xAlignment>.90,
-    bilateral:q.shoulder.yDelta<.08 && q.hip.yDelta<.08 && q.knee.yDelta<.08 && q.symmetry.handsY<.10,
+    noRoll:q.shoulder.sideAlignment>.92 && q.hip.sideAlignment>.92 && q.knee.sideAlignment>.90,
+    bilateral:q.shoulder.upDelta<.08 && q.hip.upDelta<.08 && q.knee.upDelta<.08 && q.symmetry.handsUp<.10,
     dogezaGeometry:name!=='dogeza' || (
-      q.landmarks.headY < q.landmarks.hipY &&
-      q.landmarks.handY < q.landmarks.hipY &&
-      q.landmarks.headZ > q.landmarks.hipZ &&
-      q.landmarks.handZ > q.landmarks.kneeZ
+      q.landmarks.headUp < q.landmarks.hipUp &&
+      q.landmarks.handUp < q.landmarks.hipUp &&
+      q.landmarks.headForward > q.landmarks.hipForward &&
+      q.landmarks.handForward > q.landmarks.kneeForward
     )
   };
   q.pass.all=q.pass.noRoll&&q.pass.bilateral&&q.pass.dogezaGeometry;
