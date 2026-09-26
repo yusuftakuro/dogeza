@@ -169,6 +169,16 @@ function aimBone(key,childKey,targetDir,targetSideHint=bodySide){
   root.updateMatrixWorld(true);
 }
 
+function aimBoneTowardPoint(key,childKey,targetPoint,targetSideHint=bodySide){
+  const b=bones[key];
+  if(!b)return;
+  const origin=new THREE.Vector3();
+  b.getWorldPosition(origin);
+  const dir=targetPoint.clone().sub(origin);
+  if(dir.lengthSq()<1e-8)return;
+  aimBone(key,childKey,dir.normalize(),targetSideHint);
+}
+
 function poseArmsAtSides(){
   aimBone('lArm','lFore',V(-.10,-.995,.02));
   aimBone('rArm','rFore',V(.10,-.995,.02));
@@ -239,12 +249,27 @@ function poseTorsoDogeza(){
 }
 
 function poseHandsOnThighs(){
-  aimBone('lArm','lFore',V(-.08,-.93,.36));
-  aimBone('rArm','rFore',V(.08,-.93,.36));
-  aimBone('lFore','lHand',V(.05,-.22,.974));
-  aimBone('rFore','rHand',V(-.05,-.22,.974));
-  aimBone('lHand','lIndex',V(0,-.12,.993),bodySide.clone().negate());
-  aimBone('rHand','rIndex',V(0,-.12,.993),bodySide.clone().negate());
+  // Upper arms hang naturally beside the torso.
+  aimBone('lArm','lFore',V(-.035,-.985,.17));
+  aimBone('rArm','rFore',V(.035,-.985,.17));
+  root.updateMatrixWorld(true);
+
+  // Put each wrist physically on top of its thigh instead of merely pointing forward.
+  const lHip=point('lThigh'), rHip=point('rThigh');
+  const lKnee=point('lCalf'), rKnee=point('rCalf');
+
+  const lWristTarget=new THREE.Vector3().lerpVectors(lHip,lKnee,.42).addScaledVector(bodyUp,.045);
+  const rWristTarget=new THREE.Vector3().lerpVectors(rHip,rKnee,.42).addScaledVector(bodyUp,.045);
+
+  aimBoneTowardPoint('lFore','lHand',lWristTarget);
+  aimBoneTowardPoint('rFore','rHand',rWristTarget);
+  root.updateMatrixWorld(true);
+
+  // Fingers follow the slope of the thighs toward the knees; palm stays down.
+  const lThighDir=lKnee.clone().sub(lHip).normalize();
+  const rThighDir=rKnee.clone().sub(rHip).normalize();
+  aimBone('lHand','lIndex',lThighDir,bodySide.clone().negate());
+  aimBone('rHand','rIndex',rThighDir,bodySide.clone().negate());
 }
 
 function poseHandsApproachFloor(){
@@ -338,7 +363,9 @@ function makeHeadShell(){
   headWire=new THREE.Mesh(geo.clone(),new THREE.MeshBasicMaterial({
     color:0xe6e9e6,wireframe:true,transparent:true,opacity:.94
   }));
-  scene.add(headShell,headWire);
+  // QA probe only. Never add these helper meshes to the rendered scene.
+  headShell.visible=false;
+  headWire.visible=false;
 
   const hp=new THREE.Vector3(), np=new THREE.Vector3();
   bones.head.getWorldPosition(hp); bones.neck.getWorldPosition(np);
