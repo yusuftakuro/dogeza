@@ -173,8 +173,8 @@ function poseArmsAtSides(){
   aimBone('rArm','rFore',V(.10,-.995,.02));
   aimBone('lFore','lHand',V(.02,-.995,.08));
   aimBone('rFore','rHand',V(-.02,-.995,.08));
-  aimBone('lHand','lIndex',V(0,-.2,.98));
-  aimBone('rHand','rIndex',V(0,-.2,.98));
+  aimBone('lHand','lIndex',V(0,-.2,.98),bodySide.clone().negate());
+  aimBone('rHand','rIndex',V(0,-.2,.98),bodySide.clone().negate());
 }
 
 function poseLegsStand(){
@@ -182,8 +182,8 @@ function poseLegsStand(){
   aimBone('rThigh','rCalf',V(.03,-1,.01));
   aimBone('lCalf','lFoot',V(0,-1,.02));
   aimBone('rCalf','rFoot',V(0,-1,.02));
-  aimBone('lFoot','lToe',V(0,-.05,.999));
-  aimBone('rFoot','rToe',V(0,-.05,.999));
+  aimBone('lFoot','lToe',V(0,0,1));
+  aimBone('rFoot','rToe',V(0,0,1));
 }
 
 function poseLegsDescent(){
@@ -192,8 +192,8 @@ function poseLegsDescent(){
   aimBone('rThigh','rCalf',V(.03,-.82,.57));
   aimBone('lCalf','lFoot',V(0,-.86,-.50));
   aimBone('rCalf','rFoot',V(0,-.86,-.50));
-  aimBone('lFoot','lToe',V(0,-.08,.997));
-  aimBone('rFoot','rToe',V(0,-.08,.997));
+  aimBone('lFoot','lToe',V(0,0,1));
+  aimBone('rFoot','rToe',V(0,0,1));
 }
 
 function poseLegsSeiza(){
@@ -204,8 +204,8 @@ function poseLegsSeiza(){
   aimBone('lCalf','lFoot',V(0,-.16,-.987));
   aimBone('rCalf','rFoot',V(0,-.16,-.987));
   // Instep lies along the floor behind the ankle.
-  aimBone('lFoot','lToe',V(0,-.035,-.999));
-  aimBone('rFoot','rToe',V(0,-.035,-.999));
+  aimBone('lFoot','lToe',V(0,0,-1));
+  aimBone('rFoot','rToe',V(0,0,-1));
 }
 
 function poseTorsoUpright(){
@@ -236,8 +236,8 @@ function poseHandsOnThighs(){
   aimBone('rArm','rFore',V(.08,-.93,.36));
   aimBone('lFore','lHand',V(.05,-.22,.974));
   aimBone('rFore','rHand',V(-.05,-.22,.974));
-  aimBone('lHand','lIndex',V(0,-.12,.993));
-  aimBone('rHand','rIndex',V(0,-.12,.993));
+  aimBone('lHand','lIndex',V(0,-.12,.993),bodySide.clone().negate());
+  aimBone('rHand','rIndex',V(0,-.12,.993),bodySide.clone().negate());
 }
 
 function poseHandsApproachFloor(){
@@ -245,8 +245,8 @@ function poseHandsApproachFloor(){
   aimBone('rArm','rFore',V(.10,-.48,.87));
   aimBone('lFore','lHand',V(.02,-.42,.907));
   aimBone('rFore','rHand',V(-.02,-.42,.907));
-  aimBone('lHand','lIndex',V(0,-.08,.997));
-  aimBone('rHand','rIndex',V(0,-.08,.997));
+  aimBone('lHand','lIndex',V(0,-.08,.997),bodySide.clone().negate());
+  aimBone('rHand','rIndex',V(0,-.08,.997),bodySide.clone().negate());
 }
 
 function poseHandsDogeza(){
@@ -255,8 +255,8 @@ function poseHandsDogeza(){
   aimBone('rArm','rFore',V(.70,-.50,.51));
   aimBone('lFore','lHand',V(.70,-.50,.51));
   aimBone('rFore','rHand',V(-.70,-.50,.51));
-  aimBone('lHand','lIndex',V(0,-.02,.9998));
-  aimBone('rHand','rIndex',V(0,-.02,.9998));
+  aimBone('lHand','lIndex',V(0,0,1),bodySide.clone().negate());
+  aimBone('rHand','rIndex',V(0,0,1),bodySide.clone().negate());
 }
 
 function updateBounds(){
@@ -355,6 +355,39 @@ function point(key){
   if(bones[key])bones[key].getWorldPosition(p);
   return p;
 }
+function worldVectorFromLocal(key,local){
+  const b=bones[key];
+  if(!b)return new THREE.Vector3();
+  const q=new THREE.Quaternion();
+  b.getWorldQuaternion(q);
+  return local.clone().applyQuaternion(q).normalize();
+}
+function palmNormal(key){
+  const frame=restFrames[key];
+  if(!frame)return new THREE.Vector3();
+  // On this rig, the anatomical palm normal is opposite the captured normalLocal.
+  return worldVectorFromLocal(key,frame.normalLocal.clone().negate());
+}
+function fingerAxis(key){
+  const frame=restFrames[key];
+  if(!frame)return new THREE.Vector3();
+  return worldVectorFromLocal(key,frame.dirLocal);
+}
+function clampHeadShellAboveFloor(minGap=.006){
+  if(!headWire||!bones.head)return 0;
+  syncHeadShell();
+  const box=new THREE.Box3().setFromObject(headWire);
+  if(box.min.y>=minGap)return 0;
+  const correction=Math.min(.05,minGap-box.min.y);
+  const b=bones.head;
+  const parentQ=new THREE.Quaternion();
+  if(b.parent)b.parent.getWorldQuaternion(parentQ); else parentQ.identity();
+  const localDelta=new THREE.Vector3(0,correction,0).applyQuaternion(parentQ.invert());
+  b.position.add(localDelta);
+  root.updateMatrixWorld(true);
+  syncHeadShell();
+  return correction;
+}
 function qaSnapshot(name){
   root.updateMatrixWorld(true);
   const ls=point('lShoulder'), rs=point('rShoulder');
@@ -363,6 +396,11 @@ function qaSnapshot(name){
   const la=point('lFoot'), ra=point('rFoot');
   const lw=point('lHand'), rw=point('rHand');
   const head=point('head'), hips=point('hips');
+  const lPalm=palmNormal('lHand'), rPalm=palmNormal('rHand');
+  const lFinger=fingerAxis('lHand'), rFinger=fingerAxis('rHand');
+  const lFootAxis=fingerAxis('lFoot'), rFootAxis=fingerAxis('rFoot');
+  syncHeadShell();
+  const headVisualBox=headWire?new THREE.Box3().setFromObject(headWire):null;
 
   const axisCheck=(a,b)=>{
     const v=b.clone().sub(a);
@@ -409,6 +447,15 @@ function qaSnapshot(name){
       handsUp:+Math.abs(lw.clone().sub(rw).dot(bodyUp)).toFixed(4),
       handsForward:+Math.abs(lw.clone().sub(rw).dot(bodyForward)).toFixed(4)
     },
+    surfaces:{
+      leftPalmDown:+(-lPalm.dot(bodyUp)).toFixed(4),
+      rightPalmDown:+(-rPalm.dot(bodyUp)).toFixed(4),
+      leftFingerFloorSlope:+Math.abs(lFinger.dot(bodyUp)).toFixed(4),
+      rightFingerFloorSlope:+Math.abs(rFinger.dot(bodyUp)).toFixed(4),
+      leftFootFloorSlope:+Math.abs(lFootAxis.dot(bodyUp)).toFixed(4),
+      rightFootFloorSlope:+Math.abs(rFootAxis.dot(bodyUp)).toFixed(4),
+      headVisualMinY:headVisualBox?+headVisualBox.min.y.toFixed(4):null
+    },
     landmarks:{
       headUp:+head.dot(bodyUp).toFixed(4),
       hipUp:+hips.dot(bodyUp).toFixed(4),
@@ -424,6 +471,16 @@ function qaSnapshot(name){
   q.pass={
     noRoll:q.shoulder.sideAlignment>.92 && q.hip.sideAlignment>.92 && q.knee.sideAlignment>.90,
     bilateral:q.shoulder.upDelta<.08 && q.hip.upDelta<.08 && q.knee.upDelta<.08 && q.symmetry.handsUp<.10,
+    palmsDown:(
+      (name==='stand'||name==='descent'||name==='seiza'||name==='hands'||name==='dogeza')
+      ? q.surfaces.leftPalmDown>.55 && q.surfaces.rightPalmDown>.55
+      : true
+    ),
+    feetFlat:(
+      name==='stand'||name==='descent'||name==='seiza'||name==='hands'||name==='dogeza'
+      ? q.surfaces.leftFootFloorSlope<.12 && q.surfaces.rightFootFloorSlope<.12
+      : true
+    ),
     dogezaGeometry:name!=='dogeza' || (
       q.landmarks.headUp < q.landmarks.kneeUp + .04 &&
       q.landmarks.headUp < q.landmarks.hipUp - .20 &&
@@ -432,10 +489,13 @@ function qaSnapshot(name){
       ((q.shoulderUp ?? ((q.points.lShoulder.up+q.points.rShoulder.up)/2)) < q.landmarks.hipUp - .10) &&
       q.landmarks.headForward > q.landmarks.hipForward + .22 &&
       q.landmarks.handForward > q.landmarks.headForward + .06 &&
-      q.landmarks.handForward < q.landmarks.headForward + .28
+      q.landmarks.handForward < q.landmarks.headForward + .28 &&
+      q.surfaces.leftFingerFloorSlope<.10 &&
+      q.surfaces.rightFingerFloorSlope<.10 &&
+      q.surfaces.headVisualMinY>=0
     )
   };
-  q.pass.all=q.pass.noRoll&&q.pass.bilateral&&q.pass.dogezaGeometry;
+  q.pass.all=q.pass.noRoll&&q.pass.bilateral&&q.pass.palmsDown&&q.pass.feetFlat&&q.pass.dogezaGeometry;
   window.__DOGEZA_QA__=q;
 
   if(new URLSearchParams(location.search).get('qa')==='1'){
@@ -474,7 +534,12 @@ function applyPose(name){
     poseLegsSeiza(); poseTorsoDogeza(); poseHandsDogeza();
   }
 
-  const box=alignToFloorAndCenter(lockedFloorY);
+  let box=alignToFloorAndCenter(lockedFloorY);
+  syncHeadShell();
+  if(name==='dogeza'){
+    clampHeadShellAboveFloor(.006);
+    box=updateBounds();
+  }
   fitCamera(name,box);
   syncHeadShell();
   qaSnapshot(name);
