@@ -314,9 +314,9 @@ function getSeizaFloorOffset(){
 const cameraDirs={
   stand:V(2.8,1.1,4.6),
   descent:V(2.9,1.0,4.3),
-  seiza:V(3.2,.85,3.4),
-  hands:V(3.8,.70,2.5),
-  dogeza:V(5.2,.58,.28)
+  seiza:V(5.0,.42,.55),
+  hands:V(5.0,.34,.45),
+  dogeza:V(5.0,.26,.30)
 };
 function fitCamera(name,box){
   const center=new THREE.Vector3(); box.getCenter(center);
@@ -379,6 +379,11 @@ function fingerAxis(key){
   if(!frame)return new THREE.Vector3();
   return worldVectorFromLocal(key,frame.dirLocal);
 }
+function surfaceNormal(key){
+  const frame=restFrames[key];
+  if(!frame)return new THREE.Vector3();
+  return worldVectorFromLocal(key,frame.normalLocal);
+}
 function clampHeadShellAboveFloor(minGap=.006){
   if(!headWire||!bones.head)return 0;
   syncHeadShell();
@@ -405,6 +410,7 @@ function qaSnapshot(name){
   const lPalm=palmNormal('lHand'), rPalm=palmNormal('rHand');
   const lFinger=fingerAxis('lHand'), rFinger=fingerAxis('rHand');
   const lFootAxis=fingerAxis('lFoot'), rFootAxis=fingerAxis('rFoot');
+  const lFootNormal=surfaceNormal('lFoot'), rFootNormal=surfaceNormal('rFoot');
   syncHeadShell();
   const headVisualBox=headWire?new THREE.Box3().setFromObject(headWire):null;
 
@@ -462,6 +468,8 @@ function qaSnapshot(name){
       rightFingerFloorSlope:+Math.abs(rFinger.dot(bodyUp)).toFixed(4),
       leftFootFloorSlope:+Math.abs(lFootAxis.dot(bodyUp)).toFixed(4),
       rightFootFloorSlope:+Math.abs(rFootAxis.dot(bodyUp)).toFixed(4),
+      leftFootPlaneFlat:+Math.abs(lFootNormal.dot(bodyUp)).toFixed(4),
+      rightFootPlaneFlat:+Math.abs(rFootNormal.dot(bodyUp)).toFixed(4),
       headVisualMinY:headVisualBox?+headVisualBox.min.y.toFixed(4):null
     },
     landmarks:{
@@ -486,7 +494,10 @@ function qaSnapshot(name){
     ),
     feetFlat:(
       name==='stand'||name==='descent'||name==='seiza'||name==='hands'||name==='dogeza'
-      ? q.surfaces.leftFootFloorSlope<.12 && q.surfaces.rightFootFloorSlope<.12
+      ? q.surfaces.leftFootFloorSlope<.12 &&
+        q.surfaces.rightFootFloorSlope<.12 &&
+        q.surfaces.leftFootPlaneFlat>.92 &&
+        q.surfaces.rightFootPlaneFlat>.92
       : true
     ),
     dogezaGeometry:name!=='dogeza' || (
