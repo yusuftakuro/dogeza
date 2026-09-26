@@ -179,28 +179,55 @@ function aimBoneTowardPoint(key,childKey,targetPoint,targetSideHint=bodySide){
   aimBone(key,childKey,dir.normalize(),targetSideHint);
 }
 
-function poseArmsAtSides(){
-  // Neutral standing posture: arms hang beside the torso, not forward.
-  aimBone('lArm','lFore',V(-.025,-.999,.01));
-  aimBone('rArm','rFore',V(.025,-.999,.01));
-  aimBone('lFore','lHand',V(.01,-.999,.015));
-  aimBone('rFore','rHand',V(-.01,-.999,.015));
+function aimBoneWithNormal(key,childKey,targetDir,targetNormal){
+  const b=bones[key], frame=restFrames[key];
+  if(!b||!frame)return;
+  root.updateMatrixWorld(true);
 
-  // Fingers point down. Palms face inward toward the thighs.
-  // Separate roll hints are needed for left/right hands.
-  aimBone('lHand','lIndex',V(0,-1,0),bodyForward);
-  aimBone('rHand','rIndex',V(0,-1,0),bodyForward.clone().negate());
+  const target=targetDir.clone().normalize();
+  let normal=targetNormal.clone()
+    .sub(target.clone().multiplyScalar(targetNormal.dot(target)));
+  if(normal.lengthSq()<1e-6) normal=bodyForward.clone();
+  normal.normalize();
+
+  const side=target.clone().cross(normal).normalize();
+  normal.copy(side.clone().cross(target).normalize());
+
+  const localBasis=new THREE.Matrix4().makeBasis(
+    frame.sideLocal.clone(),
+    frame.dirLocal.clone(),
+    frame.normalLocal.clone()
+  );
+  const worldBasis=new THREE.Matrix4().makeBasis(side,target,normal);
+  const desiredWorldM=worldBasis.clone().multiply(localBasis.clone().invert());
+  const desiredWorldQ=new THREE.Quaternion().setFromRotationMatrix(desiredWorldM);
+
+  const parentQ=new THREE.Quaternion();
+  if(b.parent)b.parent.getWorldQuaternion(parentQ); else parentQ.identity();
+  b.quaternion.copy(parentQ.invert().multiply(desiredWorldQ));
+  root.updateMatrixWorld(true);
+}
+
+function poseArmsAtSides(){
+  // Neutral standing posture: arms hang close to the torso with no forward "startled" reach.
+  aimBone('lArm','lFore',V(-.015,-.9997,0));
+  aimBone('rArm','rFore',V(.015,-.9997,0));
+  aimBone('lFore','lHand',V(.005,-.9999,0));
+  aimBone('rFore','rHand',V(-.005,-.9999,0));
+
+  // Fingers point straight down.
+  // Palm normals face INWARD: left palm toward right thigh, right palm toward left thigh.
+  aimBoneWithNormal('lHand','lIndex',V(0,-1,0),bodySide);
+  aimBoneWithNormal('rHand','rIndex',V(0,-1,0),bodySide.clone().negate());
 }
 
 function poseLegsStand(){
-  aimBone('lThigh','lCalf',V(-.03,-1,.01));
-  aimBone('rThigh','rCalf',V(.03,-1,.01));
-  aimBone('lCalf','lFoot',V(0,-1,.02));
-  aimBone('rCalf','rFoot',V(0,-1,.02));
-  aimBone('lFoot','lToe',V(0,0,1));
-  aimBone('rFoot','rToe',V(0,0,1));
-  aimBone('lToe','lToeEnd',V(0,0,1));
-  aimBone('rToe','rToeEnd',V(0,0,1));
+  // Keep the legs neutral, but preserve the model's native foot/ankle rotations.
+  // Forcing the foot bones flat made them look like rigid flippers.
+  aimBone('lThigh','lCalf',V(-.015,-.9998,.005));
+  aimBone('rThigh','rCalf',V(.015,-.9998,.005));
+  aimBone('lCalf','lFoot',V(0,-.9998,.015));
+  aimBone('rCalf','rFoot',V(0,-.9998,.015));
 }
 
 function poseLegsDescent(){
@@ -524,7 +551,7 @@ function qaSnapshot(name){
       : true
     ),
     feetFlat:(
-      name==='stand'||name==='descent'||name==='seiza'||name==='hands'||name==='dogeza'
+      name==='descent'||name==='seiza'||name==='hands'||name==='dogeza'
       ? q.surfaces.leftFootFloorSlope<.12 &&
         q.surfaces.rightFootFloorSlope<.12 &&
         q.surfaces.leftFootPlaneFlat>.92 &&
