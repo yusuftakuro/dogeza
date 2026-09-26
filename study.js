@@ -55,7 +55,8 @@ const aliases={
   lThigh:['LeftUpLeg'], rThigh:['RightUpLeg'],
   lCalf:['LeftLeg'], rCalf:['RightLeg'],
   lFoot:['LeftFoot'], rFoot:['RightFoot'],
-  lToe:['LeftToeBase'], rToe:['RightToeBase']
+  lToe:['LeftToeBase'], rToe:['RightToeBase'],
+  lToeEnd:['LeftToe_End'], rToeEnd:['RightToe_End']
 };
 
 const childMap={
@@ -63,7 +64,7 @@ const childMap={
   lArm:'lFore', rArm:'rFore', lFore:'lHand', rFore:'rHand',
   lHand:'lIndex', rHand:'rIndex',
   lThigh:'lCalf', rThigh:'rCalf', lCalf:'lFoot', rCalf:'rFoot',
-  lFoot:'lToe', rFoot:'rToe'
+  lFoot:'lToe', rFoot:'rToe', lToe:'lToeEnd', rToe:'rToeEnd'
 };
 
 function find(nameList){
@@ -184,6 +185,8 @@ function poseLegsStand(){
   aimBone('rCalf','rFoot',V(0,-1,.02));
   aimBone('lFoot','lToe',V(0,0,1));
   aimBone('rFoot','rToe',V(0,0,1));
+  aimBone('lToe','lToeEnd',V(0,0,1));
+  aimBone('rToe','rToeEnd',V(0,0,1));
 }
 
 function poseLegsDescent(){
@@ -194,6 +197,8 @@ function poseLegsDescent(){
   aimBone('rCalf','rFoot',V(0,-.86,-.50));
   aimBone('lFoot','lToe',V(0,0,1));
   aimBone('rFoot','rToe',V(0,0,1));
+  aimBone('lToe','lToeEnd',V(0,0,1));
+  aimBone('rToe','rToeEnd',V(0,0,1));
 }
 
 function poseLegsSeiza(){
@@ -206,6 +211,8 @@ function poseLegsSeiza(){
   // Instep lies along the floor behind the ankle.
   aimBone('lFoot','lToe',V(0,0,-1));
   aimBone('rFoot','rToe',V(0,0,-1));
+  aimBone('lToe','lToeEnd',V(0,0,-1));
+  aimBone('rToe','rToeEnd',V(0,0,-1));
 }
 
 function poseTorsoUpright(){
@@ -365,8 +372,7 @@ function worldVectorFromLocal(key,local){
 function palmNormal(key){
   const frame=restFrames[key];
   if(!frame)return new THREE.Vector3();
-  // On this rig, the anatomical palm normal is opposite the captured normalLocal.
-  return worldVectorFromLocal(key,frame.normalLocal.clone().negate());
+  return worldVectorFromLocal(key,frame.normalLocal);
 }
 function fingerAxis(key){
   const frame=restFrames[key];
@@ -437,7 +443,9 @@ function qaSnapshot(name){
       lAnkle:coords(point('lFoot')),
       rAnkle:coords(point('rFoot')),
       lToe:coords(point('lToe')),
-      rToe:coords(point('rToe'))
+      rToe:coords(point('rToe')),
+      lToeEnd:coords(point('lToeEnd')),
+      rToeEnd:coords(point('rToeEnd'))
     },
     shoulder:axisCheck(ls,rs),
     hip:axisCheck(lh,rh),
