@@ -180,12 +180,16 @@ function aimBoneTowardPoint(key,childKey,targetPoint,targetSideHint=bodySide){
 }
 
 function poseArmsAtSides(){
-  aimBone('lArm','lFore',V(-.10,-.995,.02));
-  aimBone('rArm','rFore',V(.10,-.995,.02));
-  aimBone('lFore','lHand',V(.02,-.995,.08));
-  aimBone('rFore','rHand',V(-.02,-.995,.08));
-  aimBone('lHand','lIndex',V(0,-.2,.98),bodySide.clone().negate());
-  aimBone('rHand','rIndex',V(0,-.2,.98),bodySide.clone().negate());
+  // Neutral standing posture: arms hang beside the torso, not forward.
+  aimBone('lArm','lFore',V(-.025,-.999,.01));
+  aimBone('rArm','rFore',V(.025,-.999,.01));
+  aimBone('lFore','lHand',V(.01,-.999,.015));
+  aimBone('rFore','rHand',V(-.01,-.999,.015));
+
+  // Fingers point down. Palms face inward toward the thighs.
+  // Separate roll hints are needed for left/right hands.
+  aimBone('lHand','lIndex',V(0,-1,0),bodyForward);
+  aimBone('rHand','rIndex',V(0,-1,0),bodyForward.clone().negate());
 }
 
 function poseLegsStand(){
@@ -515,7 +519,7 @@ function qaSnapshot(name){
     noRoll:q.shoulder.sideAlignment>.92 && q.hip.sideAlignment>.92 && q.knee.sideAlignment>.90,
     bilateral:q.shoulder.upDelta<.08 && q.hip.upDelta<.08 && q.knee.upDelta<.08 && q.symmetry.handsUp<.10,
     palmsDown:(
-      (name==='stand'||name==='descent'||name==='seiza'||name==='hands'||name==='dogeza')
+      (name==='descent'||name==='seiza'||name==='hands'||name==='dogeza')
       ? q.surfaces.leftPalmDown>.55 && q.surfaces.rightPalmDown>.55
       : true
     ),
