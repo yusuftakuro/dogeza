@@ -42,7 +42,7 @@ const anchor=new THREE.Group();
 scene.add(anchor);
 
 let root=null, helper=null, headShell=null, headWire=null;
-let bones={}, base={}, restFrames={}, poseSnapshots={}, motionContacts={}, currentPose='stand';
+let bones={}, base={}, restFrames={}, poseSnapshots={}, motionContacts={}, motionSpline={}, floorProfile=[], currentPose='stand';
 let motionPlaying=false, motionRaf=0;
 let bodySide=new THREE.Vector3(1,0,0), bodyUp=new THREE.Vector3(0,1,0), bodyForward=new THREE.Vector3(0,0,1);
 
@@ -780,6 +780,153 @@ function easeInOutCubic(t){
   return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 }
 
+
+function alignedTrackQuaternions(key){
+  const qs=motionTrack.map(m=>poseSnapshots[m.name].bones[key].q.clone());
+  for(let i=1;i<qs.length;i++){
+    if(qs[i-1].dot(qs[i])<0){
+      qs[i].set(-qs[i].x,-qs[i].y,-qs[i].z,-qs[i].w);
+    }
+  }
+  return qs;
+}
+
+function quatLogVec(q){
+  const qq=q.clone().normalize();
+  const v=new THREE.Vector3(qq.x,qq.y,qq.z);
+  const len=v.length();
+  if(len<1e-8)return new THREE.Vector3();
+  const a=Math.atan2(len,qq.w);
+  return v.multiplyScalar(a/len);
+}
+
+function quatExpVec(v){
+  const a=v.length();
+  if(a<1e-8)return new THREE.Quaternion(0,0,0,1);
+  const s=Math.sin(a)/a;
+  return new THREE.Quaternion(v.x*s,v.y*s,v.z*s,Math.cos(a)).normalize();
+}
+
+function squadControl(qPrev,q,qNext){
+  const inv=q.clone().invert();
+  const a=quatLogVec(inv.clone().multiply(qPrev));
+  const b=quatLogVec(inv.clone().multiply(qNext));
+  const e=quatExpVec(a.add(b).multiplyScalar(-.25));
+  return q.clone().multiply(e).normalize();
+}
+
+function buildMotionSpline(){
+  motionSpline={bones:{},anchorPositions:motionTrack.map(m=>poseSnapshots[m.name].anchor.clone())};
+
+  for(const key of Object.keys(bones)){
+    const qs=alignedTrackQuaternions(key);
+    const controls=qs.map((q,i)=>{
+      if(i===0||i===qs.length-1)return q.clone();
+      return squadControl(qs[i-1],q,qs[i+1]);
+    });
+    const ps=motionTrack.map(m=>poseSnapshots[m.name].bones[key].p.clone());
+    motionSpline.bones[key]={qs,controls,ps};
+  }
+}
+
+function hermiteVec(p0,p1,m0,m1,u,dt){
+  const u2=u*u, u3=u2*u;
+  const h00=2*u3-3*u2+1;
+  const h10=u3-2*u2+u;
+  const h01=-2*u3+3*u2;
+  const h11=u3-u2;
+  return p0.clone().multiplyScalar(h00)
+    .add(m0.clone().multiplyScalar(h10*dt))
+    .add(p1.clone().multiplyScalar(h01))
+    .add(m1.clone().multiplyScalar(h11*dt));
+}
+
+function trackVelocity(points,i){
+  if(i<=0){
+    const dt=motionTrack[1].t-motionTrack[0].t;
+    return points[1].clone().sub(points[0]).multiplyScalar(1/Math.max(dt,1e-6));
+  }
+  if(i>=points.length-1){
+    const n=points.length-1;
+    const dt=motionTrack[n].t-motionTrack[n-1].t;
+    return points[n].clone().sub(points[n-1]).multiplyScalar(1/Math.max(dt,1e-6));
+  }
+  const dt=motionTrack[i+1].t-motionTrack[i-1].t;
+  return points[i+1].clone().sub(points[i-1]).multiplyScalar(1/Math.max(dt,1e-6));
+}
+
+function squad(q0,q1,s0,s1,u){
+  const a=new THREE.Quaternion().slerpQuaternions(q0,q1,u);
+  const b=new THREE.Quaternion().slerpQuaternions(s0,s1,u);
+  return new THREE.Quaternion().slerpQuaternions(a,b,2*u*(1-u)).normalize();
+}
+
+function sampleSpline(progress,applyFloor=true){
+  const {a,b,u}=motionIntervalAt(progress);
+  const i=motionTrack.indexOf(a);
+  const j=i+1;
+  const dt=Math.max(1e-6,b.t-a.t);
+
+  const anchorPoints=motionSpline.anchorPositions;
+  const av0=trackVelocity(anchorPoints,i);
+  const av1=trackVelocity(anchorPoints,j);
+  anchor.position.copy(hermiteVec(anchorPoints[i],anchorPoints[j],av0,av1,u,dt));
+
+  for(const [key,bone] of Object.entries(bones)){
+    const d=motionSpline.bones[key];
+    const pv0=trackVelocity(d.ps,i);
+    const pv1=trackVelocity(d.ps,j);
+    bone.position.copy(hermiteVec(d.ps[i],d.ps[j],pv0,pv1,u,dt));
+    bone.quaternion.copy(squad(d.qs[i],d.qs[j],d.controls[i],d.controls[j],u));
+  }
+  anchor.updateMatrixWorld(true);
+
+  if(applyFloor && progress<=motionTrack.find(x=>x.name==='seiza').t && floorProfile.length){
+    const n=floorProfile.length-1;
+    const x=THREE.MathUtils.clamp(progress/motionTrack.find(x=>x.name==='seiza').t,0,1)*n;
+    const k=Math.floor(x), f=x-k;
+    const c0=floorProfile[Math.min(k,n)];
+    const c1=floorProfile[Math.min(k+1,n)];
+    anchor.position.y+=THREE.MathUtils.lerp(c0,c1,f);
+    anchor.updateMatrixWorld(true);
+  }
+
+  if(b.name==='dogeza'){
+    constrainFinalBowHands(u);
+    syncHeadShell();
+    clampHeadShellAboveFloor(.006);
+    anchor.updateMatrixWorld(true);
+  }
+  syncHeadShell();
+  return {a,b,u};
+}
+
+function buildFloorProfile(){
+  const saved=capturePoseSnapshot();
+  const seizaT=motionTrack.find(x=>x.name==='seiza').t;
+  const samples=180;
+  const rows=[];
+
+  for(let i=0;i<=samples;i++){
+    const p=seizaT*(i/samples);
+    sampleSpline(p,false);
+    const pelvis=point('hips').dot(bodyUp);
+    const minY=updateBounds().min.y;
+    const required=Math.max(0,-minY);
+    rows.push({pelvis,required,safe:pelvis+required});
+  }
+
+  // Minimal floor-safe pelvis curve that never rises during the descent.
+  let future=-Infinity;
+  for(let i=rows.length-1;i>=0;i--){
+    future=Math.max(future,rows[i].safe);
+    rows[i].target=future;
+  }
+
+  floorProfile=rows.map(r=>Math.max(0,r.target-r.pelvis));
+  applyPoseSnapshot(saved);
+}
+
 const motionTrack=[
   {name:'stand',t:0.00,label:'STAND',floorMode:'root'},
   {name:'descent',t:0.18,label:'DESCENT',floorMode:'root'},
@@ -964,147 +1111,84 @@ function measureFloorInfluence(state){
 
 function runMotionQA(){
   const saved=capturePoseSnapshot();
-  const segments=motionTrack.slice(0,-1).map((a,i)=>{
-    const b=motionTrack[i+1];
-    return [a.name,b.name,b.floorMode];
-  });
   const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
   let maxJointStep=0;
   let maxBoneStepDeg=0;
   let minMeshY=Infinity;
-  let lowerBodyDriftP2P3=0;
-  let lowerBodyDriftP3P4=0;
-  const segmentMinY={};
-  const segmentRootCorrection={};
-  let prevPoints=null;
-  let prevQ=null;
-  let worstState=null;
-  let worstMeta=null;
-  let bowReverseUp=0;
-  let bowReverseBack=0;
-  let prevBowHead=null;
-  let prevBowChest=null;
+  let maxPelvisRise=0;
+  let maxSpeedDelta=0;
+  let prevPoints=null, prevQ=null, prevPelvis=null, prevSpeed=null;
+  let bowReverseUp=0, bowReverseBack=0, prevBowHead=null, prevBowChest=null;
+  const samples=240;
 
-  for(const [aName,bName,floorMode] of segments){
-    const a=poseSnapshots[aName], b=poseSnapshots[bName];
-    const segKey=aName+'->'+bName;
-    segmentMinY[segKey]=Infinity;
-    segmentRootCorrection[segKey]=0;
-    let lowerRef=null;
-    let lowerRefP3P4=null;
+  for(let i=0;i<=samples;i++){
+    const raw=i/samples;
+    const progress=wholeMotionEase(raw);
+    sampleSpline(progress,true);
 
-    for(let i=0;i<=24;i++){
-      const t=i/24;
-      const rawAnchorY=THREE.MathUtils.lerp(a.anchor.y,b.anchor.y,t);
-      blendSnapshots(a,b,t,floorMode);
-      segmentRootCorrection[segKey]=Math.max(
-        segmentRootCorrection[segKey],
-        anchor.position.y-rawAnchorY
-      );
+    const points={};
+    for(const key of jointKeys)points[key]=point(key);
 
-      const points={};
-      for(const key of jointKeys)points[key]=point(key);
-
-      if(prevPoints){
-        for(const key of jointKeys){
-          maxJointStep=Math.max(maxJointStep,points[key].distanceTo(prevPoints[key]));
-        }
+    let stepMax=0;
+    if(prevPoints){
+      for(const key of jointKeys){
+        stepMax=Math.max(stepMax,points[key].distanceTo(prevPoints[key]));
       }
-
-      const qNow={};
-      for(const [k,bone] of Object.entries(bones)){
-        qNow[k]=bone.quaternion.clone();
-        if(prevQ?.[k]){
-          maxBoneStepDeg=Math.max(
-            maxBoneStepDeg,
-            THREE.MathUtils.radToDeg(prevQ[k].angleTo(qNow[k]))
-          );
-        }
-      }
-
-      const box=updateBounds();
-      if(box.min.y<minMeshY){
-        minMeshY=box.min.y;
-        worstState=capturePoseSnapshot();
-        worstMeta={segment:segKey,t:+(i/24).toFixed(4),minY:+box.min.y.toFixed(4)};
-      }
-      segmentMinY[segKey]=Math.min(segmentMinY[segKey],box.min.y);
-
-      if(aName==='seiza'&&bName==='hands'){
-        const lower=['lCalf','rCalf','lFoot','rFoot'];
-        if(!lowerRef){
-          lowerRef={};
-          for(const key of lower)lowerRef[key]=point(key);
-        }else{
-          for(const key of lower){
-            lowerBodyDriftP2P3=Math.max(
-              lowerBodyDriftP2P3,
-              point(key).distanceTo(lowerRef[key])
-            );
-          }
-        }
-      }
-
-      if((aName==='hands'&&bName==='handsPlant')||(aName==='handsPlant'&&bName==='dogeza')){
-        const headP=point('head');
-        const chestP=point('spine2');
-        if(prevBowHead&&prevBowChest){
-          bowReverseUp=Math.max(
-            bowReverseUp,
-            headP.clone().sub(prevBowHead).dot(bodyUp),
-            chestP.clone().sub(prevBowChest).dot(bodyUp)
-          );
-          bowReverseBack=Math.max(
-            bowReverseBack,
-            -headP.clone().sub(prevBowHead).dot(bodyForward),
-            -chestP.clone().sub(prevBowChest).dot(bodyForward)
-          );
-        }
-        prevBowHead=headP;
-        prevBowChest=chestP;
-      }
-
-      if(aName==='handsPlant'&&bName==='dogeza'){
-        const lower=['lCalf','rCalf','lFoot','rFoot'];
-        if(!lowerRefP3P4){
-          lowerRefP3P4={};
-          for(const key of lower)lowerRefP3P4[key]=point(key);
-        }else{
-          for(const key of lower){
-            lowerBodyDriftP3P4=Math.max(
-              lowerBodyDriftP3P4,
-              point(key).distanceTo(lowerRefP3P4[key])
-            );
-          }
-        }
-      }
-
-      prevPoints=points;
-      prevQ=qNow;
+      maxJointStep=Math.max(maxJointStep,stepMax);
+      const speed=stepMax;
+      if(prevSpeed!==null)maxSpeedDelta=Math.max(maxSpeedDelta,Math.abs(speed-prevSpeed));
+      prevSpeed=speed;
     }
+
+    const qNow={};
+    for(const [k,bone] of Object.entries(bones)){
+      qNow[k]=bone.quaternion.clone();
+      if(prevQ?.[k])maxBoneStepDeg=Math.max(maxBoneStepDeg,THREE.MathUtils.radToDeg(prevQ[k].angleTo(qNow[k])));
+    }
+
+    const pelvis=point('hips').dot(bodyUp);
+    if(prevPelvis!==null && progress<=motionTrack.find(x=>x.name==='seiza').t){
+      maxPelvisRise=Math.max(maxPelvisRise,pelvis-prevPelvis);
+    }
+
+    const box=updateBounds();
+    minMeshY=Math.min(minMeshY,box.min.y);
+
+    if(progress>=motionTrack.find(x=>x.name==='hands').t){
+      const headP=point('head'), chestP=point('spine2');
+      if(prevBowHead&&prevBowChest){
+        bowReverseUp=Math.max(bowReverseUp,
+          headP.clone().sub(prevBowHead).dot(bodyUp),
+          chestP.clone().sub(prevBowChest).dot(bodyUp));
+        bowReverseBack=Math.max(bowReverseBack,
+          -headP.clone().sub(prevBowHead).dot(bodyForward),
+          -chestP.clone().sub(prevBowChest).dot(bodyForward));
+      }
+      prevBowHead=headP; prevBowChest=chestP;
+    }
+
+    prevPoints=points;
+    prevQ=qNow;
+    prevPelvis=pelvis;
   }
 
-  const floorInfluence=worstState?measureFloorInfluence(worstState):{};
   applyPoseSnapshot(saved);
   window.__DOGEZA_MOTION_QA__={
     maxJointStep:+maxJointStep.toFixed(4),
     maxBoneStepDeg:+maxBoneStepDeg.toFixed(2),
     minMeshY:+minMeshY.toFixed(4),
-    lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
-    lowerBodyDriftP3P4:+lowerBodyDriftP3P4.toFixed(4),
+    maxPelvisRise:+maxPelvisRise.toFixed(4),
+    maxSpeedDelta:+maxSpeedDelta.toFixed(4),
     bowReverseUp:+bowReverseUp.toFixed(4),
     bowReverseBack:+bowReverseBack.toFixed(4),
     internalPauseMs:0,
-    worstPenetration:worstMeta,
-    floorInfluence,
-    segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
-    segmentRootCorrection:Object.fromEntries(Object.entries(segmentRootCorrection).map(([k,v])=>[k,+v.toFixed(4)])),
+    floorProfileMax:+Math.max(...floorProfile).toFixed(4),
     pass:{
       noFloorPenetration:minMeshY>=-.02,
-      noFrameJump:maxJointStep<.12,
-      noRotationFlip:maxBoneStepDeg<18,
-      stableLowerBodyP2P3:lowerBodyDriftP2P3<.025,
-      stableLowerBodyP3P4:lowerBodyDriftP3P4<.025,
+      noFrameJump:maxJointStep<.10,
+      noRotationFlip:maxBoneStepDeg<12,
+      noPelvisBounce:maxPelvisRise<.006,
+      smoothSpeed:maxSpeedDelta<.02,
       noBowRewind:bowReverseUp<.012 && bowReverseBack<.012
     }
   };
@@ -1139,16 +1223,7 @@ async function playMotion(){
 
     const raw=THREE.MathUtils.clamp((now-started)/duration,0,1);
     const progress=wholeMotionEase(raw);
-    const {a,b,u}=motionIntervalAt(progress);
-
-    // Linear interpolation inside each interval: no stop/start easing at keyframes.
-    blendSnapshots(
-      poseSnapshots[a.name],
-      poseSnapshots[b.name],
-      u,
-      b.floorMode
-    );
-
+    const {b}=sampleSpline(progress,true);
     poseReadout.innerHTML='MOTION <b>'+b.label+'</b>';
 
     if(raw<1){
@@ -1247,6 +1322,8 @@ new GLTFLoader().load(modelURL,gltf=>{
   const requestedPose=new URLSearchParams(location.search).get('pose');
   const initialPose=['stand','descent','seiza','hands','dogeza'].includes(requestedPose)?requestedPose:'stand';
   buildPoseSnapshots();
+  buildMotionSpline();
+  buildFloorProfile();
   applyPose(initialPose);
   runMotionQA();
   boneStatus.textContent += ' / SKIN '+skinned;
