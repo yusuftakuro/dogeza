@@ -1353,10 +1353,33 @@ new GLTFLoader().load(modelURL,gltf=>{
 
   if(Number.isFinite(fixedFrame)){
     const p=THREE.MathUtils.clamp(fixedFrame,0,1);
-    sampleSpline(p,true);
+    const seg=sampleSpline(p,true);
     setMotionCamera();
     poseReadout.innerHTML='FRAME <b>'+p.toFixed(3)+'</b>';
     if(motionBtn)motionBtn.style.display='none';
+
+    const avg=(a,b)=>(a+b)/2;
+    const lHandP=point('lHand'), rHandP=point('rHand');
+    const lKneeP=point('lCalf'), rKneeP=point('rCalf');
+    const hipP=point('hips');
+    window.__DOGEZA_FRAME_QA__={
+      progress:+p.toFixed(4),
+      segment:seg.a.name+'->'+seg.b.name,
+      localT:+seg.u.toFixed(4),
+      leftHandY:+lHandP.y.toFixed(4),
+      rightHandY:+rHandP.y.toFixed(4),
+      avgHandY:+avg(lHandP.y,rHandP.y).toFixed(4),
+      avgKneeY:+avg(lKneeP.y,rKneeP.y).toFixed(4),
+      hipY:+hipP.y.toFixed(4),
+      meshMinY:+updateBounds().min.y.toFixed(4)
+    };
+    if(params.get('frameqa')==='1'){
+      const pre=document.createElement('pre');
+      pre.id='frameQaData';
+      pre.style.cssText='position:fixed;left:8px;top:150px;z-index:99;background:#000d;color:#fff;font:10px/1.35 monospace;padding:8px;max-width:94vw;white-space:pre-wrap;pointer-events:none';
+      pre.textContent=JSON.stringify(window.__DOGEZA_FRAME_QA__,null,2);
+      document.body.appendChild(pre);
+    }
   }else{
     applyPose(initialPose);
   }
