@@ -621,7 +621,7 @@ function applyPoseSnapshot(snap){
     bones[k].quaternion.copy(state.q);
     bones[k].position.copy(state.p);
   }
-  root.updateMatrixWorld(true);
+  anchor.updateMatrixWorld(true);
   syncHeadShell();
 }
 
@@ -682,13 +682,13 @@ function blendSnapshots(from,to,t,projectToFloor=true){
     b.quaternion.slerpQuaternions(a.q,z.q,t);
     b.position.lerpVectors(a.p,z.p,t);
   }
-  root.updateMatrixWorld(true);
+  anchor.updateMatrixWorld(true);
 
   if(projectToFloor){
     const box=updateBounds();
     if(box.min.y<0){
       anchor.position.y+=-box.min.y;
-      root.updateMatrixWorld(true);
+      anchor.updateMatrixWorld(true);
     }
   }
   syncHeadShell();
