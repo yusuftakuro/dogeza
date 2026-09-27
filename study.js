@@ -636,6 +636,15 @@ function applyPoseSnapshot(snap){
   syncHeadShell();
 }
 
+function cloneSnapshot(src){
+  return {
+    anchor:src.anchor.clone(),
+    bones:Object.fromEntries(
+      Object.entries(src.bones).map(([k,v])=>[k,{q:v.q.clone(),p:v.p.clone()}])
+    )
+  };
+}
+
 function buildPoseSnapshots(){
   const order=['stand','descent','seiza','hands','dogeza'];
   for(const name of order){
@@ -643,14 +652,29 @@ function buildPoseSnapshots(){
     poseSnapshots[name]=capturePoseSnapshot();
   }
 
-  // Hidden KNEEL keyframe: knees contact first, then the body settles into seiza.
+  // Hidden BOTH-KNEES keyframe.
   resetPose();
   anchor.position.set(0,0,0);
   poseLegsKneel();
   poseTorsoUpright();
   poseArmsAtSides();
   alignToFloorAndCenter(null);
-  poseSnapshots.kneel=capturePoseSnapshot();
+  poseSnapshots.bothKnees=capturePoseSnapshot();
+
+  // Hidden LEFT-KNEE keyframe.
+  // Start from P1, but only the left leg has completed the kneeling action.
+  poseSnapshots.leftKnee=cloneSnapshot(poseSnapshots.descent);
+  for(const key of ['lThigh','lCalf','lFoot','lToe','lToeEnd']){
+    poseSnapshots.leftKnee.bones[key]={
+      q:poseSnapshots.bothKnees.bones[key].q.clone(),
+      p:poseSnapshots.bothKnees.bones[key].p.clone()
+    };
+  }
+  poseSnapshots.leftKnee.anchor.y=THREE.MathUtils.lerp(
+    poseSnapshots.descent.anchor.y,
+    poseSnapshots.bothKnees.anchor.y,
+    .58
+  );
 
   // Static study poses are independently centered for inspection, but motion must
   // share one horizontal world origin or the body visibly slides between poses.
@@ -849,8 +873,9 @@ function runMotionQA(){
   const saved=capturePoseSnapshot();
   const segments=[
     ['stand','descent','root'],
-    ['descent','kneel','root'],
-    ['kneel','seiza','root'],
+    ['descent','leftKnee','root'],
+    ['leftKnee','bothKnees','root'],
+    ['bothKnees','seiza','root'],
     ['seiza','hands','root'],
     ['hands','dogeza','dogeza']
   ];
@@ -989,9 +1014,10 @@ async function playMotion(){
   setMotionCamera();
 
   const seq=[
-    ['stand','descent',650,'P0 → P1','root'],
-    ['descent','kneel',520,'P1 → KNEEL','root'],
-    ['kneel','seiza',580,'KNEEL → P2','root'],
+    ['stand','descent',520,'P0 → P1','root'],
+    ['descent','leftKnee',480,'LEFT KNEE','root'],
+    ['leftKnee','bothKnees',360,'RIGHT KNEE','root'],
+    ['bothKnees','seiza',520,'SIT BACK → P2','root'],
     ['seiza','hands',700,'P2 → P3','root'],
     ['hands','dogeza',900,'P3 → P4','dogeza']
   ];
