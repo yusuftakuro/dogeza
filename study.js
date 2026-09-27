@@ -244,6 +244,19 @@ function poseLegsDescent(){
   aimBone('rToe','rToeEnd',V(0,0,1));
 }
 
+function poseLegsKneel(){
+  // Hidden transition keyframe: knees reach the floor first, then the hips sit back.
+  // This prevents the shins/feet from cutting through the floor on the way to seiza.
+  aimBone('lThigh','lCalf',V(-.025,-.90,.435));
+  aimBone('rThigh','rCalf',V(.025,-.90,.435));
+  aimBone('lCalf','lFoot',V(0,-.08,-.997));
+  aimBone('rCalf','rFoot',V(0,-.08,-.997));
+  aimBone('lFoot','lToe',V(0,0,-1));
+  aimBone('rFoot','rToe',V(0,0,-1));
+  aimBone('lToe','lToeEnd',V(0,0,-1));
+  aimBone('rToe','rToeEnd',V(0,0,-1));
+}
+
 function poseLegsSeiza(){
   // Hip -> knee: forward/down. Knee -> ankle: backward and almost horizontal.
   // This is the defining folded-leg structure of seiza.
@@ -619,6 +632,15 @@ function buildPoseSnapshots(){
     poseSnapshots[name]=capturePoseSnapshot();
   }
 
+  // Hidden KNEEL keyframe: knees contact first, then the body settles into seiza.
+  resetPose();
+  anchor.position.set(0,0,0);
+  poseLegsKneel();
+  poseTorsoUpright();
+  poseArmsAtSides();
+  alignToFloorAndCenter(null);
+  poseSnapshots.kneel=capturePoseSnapshot();
+
   // Static study poses are independently centered for inspection, but motion must
   // share one horizontal world origin or the body visibly slides between poses.
   const fixedX=poseSnapshots.stand.anchor.x;
@@ -689,7 +711,8 @@ function runMotionQA(){
   const saved=capturePoseSnapshot();
   const segments=[
     ['stand','descent'],
-    ['descent','seiza'],
+    ['descent','kneel'],
+    ['kneel','seiza'],
     ['seiza','hands'],
     ['hands','dogeza']
   ];
@@ -698,11 +721,14 @@ function runMotionQA(){
   let maxBoneStepDeg=0;
   let minMeshY=Infinity;
   let lowerBodyDriftP2P3=0;
+  const segmentMinY={};
   let prevPoints=null;
   let prevQ=null;
 
   for(const [aName,bName] of segments){
     const a=poseSnapshots[aName], b=poseSnapshots[bName];
+    const segKey=aName+'->'+bName;
+    segmentMinY[segKey]=Infinity;
     let lowerRef=null;
 
     for(let i=0;i<=24;i++){
@@ -731,6 +757,7 @@ function runMotionQA(){
 
       const box=updateBounds();
       minMeshY=Math.min(minMeshY,box.min.y);
+      segmentMinY[segKey]=Math.min(segmentMinY[segKey],box.min.y);
 
       if(aName==='seiza'&&bName==='hands'){
         const lower=['lCalf','rCalf','lFoot','rFoot'];
@@ -758,6 +785,7 @@ function runMotionQA(){
     maxBoneStepDeg:+maxBoneStepDeg.toFixed(2),
     minMeshY:+minMeshY.toFixed(4),
     lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
+    segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
     pass:{
       noFloorPenetration:minMeshY>=-.02,
       noFrameJump:maxJointStep<.12,
@@ -788,7 +816,8 @@ async function playMotion(){
 
   const seq=[
     ['stand','descent',650,'P0 → P1'],
-    ['descent','seiza',850,'P1 → P2'],
+    ['descent','kneel',520,'P1 → KNEEL'],
+    ['kneel','seiza',580,'KNEEL → P2'],
     ['seiza','hands',700,'P2 → P3'],
     ['hands','dogeza',900,'P3 → P4']
   ];
