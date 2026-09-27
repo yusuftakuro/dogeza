@@ -801,6 +801,39 @@ function tweenSnapshots(from,to,duration,label,floorMode='root'){
   });
 }
 
+function shiftBoneWorld(key,dy){
+  const b=bones[key];
+  if(!b)return;
+  const parentQ=new THREE.Quaternion();
+  if(b.parent)b.parent.getWorldQuaternion(parentQ); else parentQ.identity();
+  const localDelta=bodyUp.clone().multiplyScalar(dy).applyQuaternion(parentQ.invert());
+  b.position.add(localDelta);
+}
+
+function measureFloorInfluence(state){
+  const groups={
+    head:['head'],
+    neck:['neck'],
+    hands:['lHand','rHand'],
+    forearms:['lFore','rFore'],
+    upperChest:['spine2'],
+    midSpine:['spine1']
+  };
+  const out={};
+  const test=.01;
+
+  for(const [name,keys] of Object.entries(groups)){
+    applyPoseSnapshot(state);
+    const before=updateBounds().min.y;
+    for(const key of keys)shiftBoneWorld(key,test);
+    anchor.updateMatrixWorld(true);
+    const after=updateBounds().min.y;
+    out[name]=+(after-before).toFixed(4);
+  }
+  applyPoseSnapshot(state);
+  return out;
+}
+
 function runMotionQA(){
   const saved=capturePoseSnapshot();
   const segments=[
@@ -820,6 +853,8 @@ function runMotionQA(){
   const segmentRootCorrection={};
   let prevPoints=null;
   let prevQ=null;
+  let worstState=null;
+  let worstMeta=null;
 
   for(const [aName,bName,floorMode] of segments){
     const a=poseSnapshots[aName], b=poseSnapshots[bName];
@@ -859,7 +894,11 @@ function runMotionQA(){
       }
 
       const box=updateBounds();
-      minMeshY=Math.min(minMeshY,box.min.y);
+      if(box.min.y<minMeshY){
+        minMeshY=box.min.y;
+        worstState=capturePoseSnapshot();
+        worstMeta={segment:segKey,t:+(i/24).toFixed(4),minY:+box.min.y.toFixed(4)};
+      }
       segmentMinY[segKey]=Math.min(segmentMinY[segKey],box.min.y);
 
       if(aName==='seiza'&&bName==='hands'){
@@ -897,6 +936,7 @@ function runMotionQA(){
     }
   }
 
+  const floorInfluence=worstState?measureFloorInfluence(worstState):{};
   applyPoseSnapshot(saved);
   window.__DOGEZA_MOTION_QA__={
     maxJointStep:+maxJointStep.toFixed(4),
@@ -904,6 +944,8 @@ function runMotionQA(){
     minMeshY:+minMeshY.toFixed(4),
     lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
     lowerBodyDriftP3P4:+lowerBodyDriftP3P4.toFixed(4),
+    worstPenetration:worstMeta,
+    floorInfluence,
     segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
     segmentRootCorrection:Object.fromEntries(Object.entries(segmentRootCorrection).map(([k,v])=>[k,+v.toFixed(4)])),
     pass:{
