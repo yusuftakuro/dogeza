@@ -674,7 +674,7 @@ function stopMotion(keepPose=true){
   if(!keepPose && root) applyPose(currentPose);
 }
 
-function blendSnapshots(from,to,t,projectToFloor=true){
+function blendSnapshots(from,to,t,floorMode='root'){
   anchor.position.lerpVectors(from.anchor,to.anchor,t);
   for(const [k,b] of Object.entries(bones)){
     const a=from.bones[k], z=to.bones[k];
@@ -684,24 +684,29 @@ function blendSnapshots(from,to,t,projectToFloor=true){
   }
   anchor.updateMatrixWorld(true);
 
-  if(projectToFloor){
+  if(floorMode==='root'){
     const box=updateBounds();
     if(box.min.y<0){
       anchor.position.y+=-box.min.y;
       anchor.updateMatrixWorld(true);
     }
+  }else if(floorMode==='dogeza'){
+    // Lower body stays planted. Only stop the head/forehead from crossing the floor.
+    syncHeadShell();
+    clampHeadShellAboveFloor(.006);
+    anchor.updateMatrixWorld(true);
   }
   syncHeadShell();
 }
 
-function tweenSnapshots(from,to,duration,label){
+function tweenSnapshots(from,to,duration,label,floorMode='root'){
   return new Promise(resolve=>{
     const start=performance.now();
     const step=now=>{
       if(!motionPlaying){resolve(false);return;}
       const raw=Math.min(1,(now-start)/duration);
       const t=easeInOutCubic(raw);
-      blendSnapshots(from,to,t);
+      blendSnapshots(from,to,t,floorMode);
       poseReadout.innerHTML='MOTION <b>'+label+'</b>';
 
       if(raw<1){
@@ -718,11 +723,11 @@ function tweenSnapshots(from,to,duration,label){
 function runMotionQA(){
   const saved=capturePoseSnapshot();
   const segments=[
-    ['stand','descent'],
-    ['descent','kneel'],
-    ['kneel','seiza'],
-    ['seiza','hands'],
-    ['hands','dogeza']
+    ['stand','descent','root'],
+    ['descent','kneel','root'],
+    ['kneel','seiza','root'],
+    ['seiza','hands','root'],
+    ['hands','dogeza','dogeza']
   ];
   const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
   let maxJointStep=0;
@@ -735,7 +740,7 @@ function runMotionQA(){
   let prevPoints=null;
   let prevQ=null;
 
-  for(const [aName,bName] of segments){
+  for(const [aName,bName,floorMode] of segments){
     const a=poseSnapshots[aName], b=poseSnapshots[bName];
     const segKey=aName+'->'+bName;
     segmentMinY[segKey]=Infinity;
@@ -746,7 +751,7 @@ function runMotionQA(){
     for(let i=0;i<=24;i++){
       const t=easeInOutCubic(i/24);
       const rawAnchorY=THREE.MathUtils.lerp(a.anchor.y,b.anchor.y,t);
-      blendSnapshots(a,b,t,true);
+      blendSnapshots(a,b,t,floorMode);
       segmentRootCorrection[segKey]=Math.max(
         segmentRootCorrection[segKey],
         anchor.position.y-rawAnchorY
@@ -850,18 +855,18 @@ async function playMotion(){
   setMotionCamera();
 
   const seq=[
-    ['stand','descent',650,'P0 → P1'],
-    ['descent','kneel',520,'P1 → KNEEL'],
-    ['kneel','seiza',580,'KNEEL → P2'],
-    ['seiza','hands',700,'P2 → P3'],
-    ['hands','dogeza',900,'P3 → P4']
+    ['stand','descent',650,'P0 → P1','root'],
+    ['descent','kneel',520,'P1 → KNEEL','root'],
+    ['kneel','seiza',580,'KNEEL → P2','root'],
+    ['seiza','hands',700,'P2 → P3','root'],
+    ['hands','dogeza',900,'P3 → P4','dogeza']
   ];
 
   applyPoseSnapshot(poseSnapshots.stand);
   await new Promise(r=>setTimeout(r,180));
 
-  for(const [a,b,d,label] of seq){
-    const ok=await tweenSnapshots(poseSnapshots[a],poseSnapshots[b],d,label);
+  for(const [a,b,d,label,floorMode] of seq){
+    const ok=await tweenSnapshots(poseSnapshots[a],poseSnapshots[b],d,label,floorMode);
     if(!ok)return;
     await new Promise(r=>setTimeout(r,120));
   }
