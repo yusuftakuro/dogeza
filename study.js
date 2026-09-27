@@ -1114,6 +1114,7 @@ function runMotionQA(){
   const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
   let maxJointStep=0;
   let maxBoneStepDeg=0;
+  let maxBoneStepInfo=null;
   let minMeshY=Infinity;
   let maxPelvisRise=0;
   let maxSpeedDelta=0;
@@ -1143,7 +1144,13 @@ function runMotionQA(){
     const qNow={};
     for(const [k,bone] of Object.entries(bones)){
       qNow[k]=bone.quaternion.clone();
-      if(prevQ?.[k])maxBoneStepDeg=Math.max(maxBoneStepDeg,THREE.MathUtils.radToDeg(prevQ[k].angleTo(qNow[k])));
+      if(prevQ?.[k]){
+        const deg=THREE.MathUtils.radToDeg(prevQ[k].angleTo(qNow[k]));
+        if(deg>maxBoneStepDeg){
+          maxBoneStepDeg=deg;
+          maxBoneStepInfo={bone:k,raw:+raw.toFixed(4),progress:+progress.toFixed(4),deg:+deg.toFixed(2)};
+        }
+      }
     }
 
     const pelvis=point('hips').dot(bodyUp);
@@ -1176,6 +1183,7 @@ function runMotionQA(){
   window.__DOGEZA_MOTION_QA__={
     maxJointStep:+maxJointStep.toFixed(4),
     maxBoneStepDeg:+maxBoneStepDeg.toFixed(2),
+    maxBoneStepInfo,
     minMeshY:+minMeshY.toFixed(4),
     maxPelvisRise:+maxPelvisRise.toFixed(4),
     maxSpeedDelta:+maxSpeedDelta.toFixed(4),
