@@ -780,6 +780,37 @@ function easeInOutCubic(t){
   return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 }
 
+const motionTrack=[
+  {name:'stand',t:0.00,label:'STAND',floorMode:'root'},
+  {name:'descent',t:0.18,label:'DESCENT',floorMode:'root'},
+  {name:'bothKneesTucked',t:0.34,label:'KNEES DOWN',floorMode:'root'},
+  {name:'instepsDown',t:0.46,label:'INSTEP DOWN',floorMode:'root'},
+  {name:'seiza',t:0.57,label:'SEIZA',floorMode:'root'},
+  {name:'hands',t:0.73,label:'REACH',floorMode:'root'},
+  {name:'handsPlant',t:0.83,label:'PALMS CONTACT',floorMode:'root'},
+  {name:'dogeza',t:1.00,label:'DOGEZA',floorMode:'dogeza'}
+];
+
+function wholeMotionEase(t){
+  // Ease only the beginning and end of the WHOLE gesture.
+  // Internal contact events do not come to a stop.
+  return .5-.5*Math.cos(Math.PI*t);
+}
+
+function motionIntervalAt(progress){
+  const p=THREE.MathUtils.clamp(progress,0,1);
+  for(let i=0;i<motionTrack.length-1;i++){
+    const a=motionTrack[i], b=motionTrack[i+1];
+    if(p<=b.t){
+      const u=(p-a.t)/Math.max(1e-6,b.t-a.t);
+      return {a,b,u:THREE.MathUtils.clamp(u,0,1)};
+    }
+  }
+  const a=motionTrack[motionTrack.length-2];
+  const b=motionTrack[motionTrack.length-1];
+  return {a,b,u:1};
+}
+
 function stopMotion(keepPose=true){
   motionPlaying=false;
   cancelAnimationFrame(motionRaf);
@@ -933,16 +964,10 @@ function measureFloorInfluence(state){
 
 function runMotionQA(){
   const saved=capturePoseSnapshot();
-  const segments=[
-    ['stand','leftStep','root'],
-    ['leftStep','leftKnee','root'],
-    ['leftKnee','bothKneesTucked','root'],
-    ['bothKneesTucked','instepsDown','root'],
-    ['instepsDown','seiza','root'],
-    ['seiza','hands','root'],
-    ['hands','handsPlant','root'],
-    ['handsPlant','dogeza','dogeza']
-  ];
+  const segments=motionTrack.slice(0,-1).map((a,i)=>{
+    const b=motionTrack[i+1];
+    return [a.name,b.name,b.floorMode];
+  });
   const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
   let maxJointStep=0;
   let maxBoneStepDeg=0;
@@ -969,7 +994,7 @@ function runMotionQA(){
     let lowerRefP3P4=null;
 
     for(let i=0;i<=24;i++){
-      const t=easeInOutCubic(i/24);
+      const t=i/24;
       const rawAnchorY=THREE.MathUtils.lerp(a.anchor.y,b.anchor.y,t);
       blendSnapshots(a,b,t,floorMode);
       segmentRootCorrection[segKey]=Math.max(
@@ -1069,6 +1094,7 @@ function runMotionQA(){
     lowerBodyDriftP3P4:+lowerBodyDriftP3P4.toFixed(4),
     bowReverseUp:+bowReverseUp.toFixed(4),
     bowReverseBack:+bowReverseBack.toFixed(4),
+    internalPauseMs:0,
     worstPenetration:worstMeta,
     floorInfluence,
     segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
@@ -1103,31 +1129,42 @@ async function playMotion(){
   if(motionBtn)motionBtn.textContent='STOP';
   setMotionCamera();
 
-  const seq=[
-    ['stand','leftStep',180,'DESCENT','root'],
-    ['leftStep','leftKnee',260,'KNEES DOWN','root'],
-    ['leftKnee','bothKneesTucked',180,'KNEES DOWN','root'],
-    ['bothKneesTucked','instepsDown',150,'INSTEP DOWN','root'],
-    ['instepsDown','seiza',280,'SETTLE → P2','root'],
-    ['seiza','hands',420,'REACH → P3','root'],
-    ['hands','handsPlant',220,'PALMS CONTACT','root'],
-    ['handsPlant','dogeza',620,'BOW → P4','dogeza']
-  ];
-
   applyPoseSnapshot(poseSnapshots.stand);
-  await new Promise(r=>setTimeout(r,180));
 
-  for(const [a,b,d,label,floorMode] of seq){
-    const ok=await tweenSnapshots(poseSnapshots[a],poseSnapshots[b],d,label,floorMode);
-    if(!ok)return;
-    await new Promise(r=>setTimeout(r,120));
-  }
+  const duration=2550;
+  const started=performance.now();
 
-  currentPose='dogeza';
-  document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose==='dogeza'));
-  poseReadout.innerHTML='POSE <b>DOGEZA</b>';
-  stopMotion(true);
-  qaSnapshot('dogeza');
+  const step=now=>{
+    if(!motionPlaying)return;
+
+    const raw=THREE.MathUtils.clamp((now-started)/duration,0,1);
+    const progress=wholeMotionEase(raw);
+    const {a,b,u}=motionIntervalAt(progress);
+
+    // Linear interpolation inside each interval: no stop/start easing at keyframes.
+    blendSnapshots(
+      poseSnapshots[a.name],
+      poseSnapshots[b.name],
+      u,
+      b.floorMode
+    );
+
+    poseReadout.innerHTML='MOTION <b>'+b.label+'</b>';
+
+    if(raw<1){
+      motionRaf=requestAnimationFrame(step);
+      return;
+    }
+
+    applyPoseSnapshot(poseSnapshots.dogeza);
+    currentPose='dogeza';
+    document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose==='dogeza'));
+    poseReadout.innerHTML='POSE <b>DOGEZA</b>';
+    stopMotion(true);
+    qaSnapshot('dogeza');
+  };
+
+  motionRaf=requestAnimationFrame(step);
 }
 
 function applyPose(name){
