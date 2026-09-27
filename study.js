@@ -6,6 +6,7 @@ const host=document.querySelector('#viewport');
 const loading=document.querySelector('#loading');
 const boneStatus=document.querySelector('#boneStatus');
 const poseReadout=document.querySelector('#poseReadout');
+const motionBtn=document.querySelector('#motionBtn');
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x030405);
@@ -41,7 +42,8 @@ const anchor=new THREE.Group();
 scene.add(anchor);
 
 let root=null, helper=null, headShell=null, headWire=null;
-let bones={}, base={}, restFrames={}, currentPose='stand';
+let bones={}, base={}, restFrames={}, poseSnapshots={}, currentPose='stand';
+let motionPlaying=false, motionRaf=0;
 let bodySide=new THREE.Vector3(1,0,0), bodyUp=new THREE.Vector3(0,1,0), bodyForward=new THREE.Vector3(0,0,1);
 
 const aliases={
@@ -587,8 +589,123 @@ function qaSnapshot(name){
   }
 }
 
+function capturePoseSnapshot(){
+  const snap={
+    anchor:anchor.position.clone(),
+    bones:{}
+  };
+  for(const [k,b] of Object.entries(bones)){
+    snap.bones[k]={q:b.quaternion.clone(),p:b.position.clone()};
+  }
+  return snap;
+}
+
+function applyPoseSnapshot(snap){
+  if(!snap)return;
+  anchor.position.copy(snap.anchor);
+  for(const [k,state] of Object.entries(snap.bones)){
+    if(!bones[k])continue;
+    bones[k].quaternion.copy(state.q);
+    bones[k].position.copy(state.p);
+  }
+  root.updateMatrixWorld(true);
+  syncHeadShell();
+}
+
+function buildPoseSnapshots(){
+  const order=['stand','descent','seiza','hands','dogeza'];
+  for(const name of order){
+    applyPose(name);
+    poseSnapshots[name]=capturePoseSnapshot();
+  }
+}
+
+function setMotionCamera(){
+  const target=bodyUp.clone().multiplyScalar(.78);
+  const dir=V(5.0,.32,.55);
+  camera.position.copy(target).add(dir.multiplyScalar(3.8));
+  controls.target.copy(target);
+  controls.update();
+}
+
+function easeInOutCubic(t){
+  return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+}
+
+function stopMotion(keepPose=true){
+  motionPlaying=false;
+  cancelAnimationFrame(motionRaf);
+  motionRaf=0;
+  if(motionBtn){
+    motionBtn.textContent='PLAY MOTION';
+    motionBtn.classList.remove('active');
+  }
+  if(!keepPose && root) applyPose(currentPose);
+}
+
+function tweenSnapshots(from,to,duration,label){
+  return new Promise(resolve=>{
+    const start=performance.now();
+    const step=now=>{
+      if(!motionPlaying){resolve(false);return;}
+      const raw=Math.min(1,(now-start)/duration);
+      const t=easeInOutCubic(raw);
+      anchor.position.lerpVectors(from.anchor,to.anchor,t);
+
+      for(const [k,b] of Object.entries(bones)){
+        const a=from.bones[k], z=to.bones[k];
+        if(!a||!z)continue;
+        b.quaternion.slerpQuaternions(a.q,z.q,t);
+        b.position.lerpVectors(a.p,z.p,t);
+      }
+      root.updateMatrixWorld(true);
+      syncHeadShell();
+      poseReadout.innerHTML='MOTION <b>'+label+'</b>';
+
+      if(raw<1){
+        motionRaf=requestAnimationFrame(step);
+      }else{
+        applyPoseSnapshot(to);
+        resolve(true);
+      }
+    };
+    motionRaf=requestAnimationFrame(step);
+  });
+}
+
+async function playMotion(){
+  if(!root||motionPlaying)return;
+  motionPlaying=true;
+  motionBtn?.classList.add('active');
+  if(motionBtn)motionBtn.textContent='STOP';
+  setMotionCamera();
+
+  const seq=[
+    ['stand','descent',650,'P0 → P1'],
+    ['descent','seiza',850,'P1 → P2'],
+    ['seiza','hands',700,'P2 → P3'],
+    ['hands','dogeza',900,'P3 → P4']
+  ];
+
+  applyPoseSnapshot(poseSnapshots.stand);
+  await new Promise(r=>setTimeout(r,180));
+
+  for(const [a,b,d,label] of seq){
+    const ok=await tweenSnapshots(poseSnapshots[a],poseSnapshots[b],d,label);
+    if(!ok)return;
+    await new Promise(r=>setTimeout(r,120));
+  }
+
+  currentPose='dogeza';
+  document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose==='dogeza'));
+  poseReadout.innerHTML='POSE <b>DOGEZA</b>';
+  stopMotion(true);
+  qaSnapshot('dogeza');
+}
+
 function applyPose(name){
   if(!root)return;
+  if(motionPlaying) stopMotion(true);
   currentPose=name;
 
   let lockedFloorY=null;
@@ -665,6 +782,7 @@ new GLTFLoader().load(modelURL,gltf=>{
   makeHeadShell();
   const requestedPose=new URLSearchParams(location.search).get('pose');
   const initialPose=['stand','descent','seiza','hands','dogeza'].includes(requestedPose)?requestedPose:'stand';
+  buildPoseSnapshots();
   applyPose(initialPose);
   boneStatus.textContent += ' / SKIN '+skinned;
 
@@ -677,6 +795,12 @@ new GLTFLoader().load(modelURL,gltf=>{
 
 document.querySelectorAll('.pose').forEach(btn=>{
   btn.addEventListener('click',e=>{e.preventDefault();if(root)applyPose(btn.dataset.pose)});
+});
+motionBtn?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  if(motionPlaying) stopMotion(false);
+  else playMotion();
 });
 
 function resize(){
