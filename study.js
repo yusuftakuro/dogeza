@@ -1234,6 +1234,7 @@ function runMotionQA(){
     bowReverseUp:+bowReverseUp.toFixed(4),
     bowReverseBack:+bowReverseBack.toFixed(4),
     internalPauseMs:0,
+    finalPoseOverwrite:false,
     floorProfileMax:+Math.max(...floorProfile).toFixed(4),
     pass:{
       noFloorPenetration:minMeshY>=-.02,
@@ -1283,7 +1284,9 @@ async function playMotion(){
       return;
     }
 
-    applyPoseSnapshot(poseSnapshots.dogeza);
+    // Keep the exact constrained final animation frame.
+    // Do NOT overwrite it with the independently-authored static DOGEZA snapshot:
+    // that caused the visible pop at the end of playback.
     currentPose='dogeza';
     document.querySelectorAll('.pose').forEach(el=>el.classList.toggle('active',el.dataset.pose==='dogeza'));
     poseReadout.innerHTML='POSE <b>DOGEZA</b>';
