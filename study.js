@@ -42,7 +42,7 @@ const anchor=new THREE.Group();
 scene.add(anchor);
 
 let root=null, helper=null, headShell=null, headWire=null;
-let bones={}, base={}, restFrames={}, poseSnapshots={}, currentPose='stand';
+let bones={}, base={}, restFrames={}, poseSnapshots={}, motionContacts={}, currentPose='stand';
 let motionPlaying=false, motionRaf=0;
 let bodySide=new THREE.Vector3(1,0,0), bodyUp=new THREE.Vector3(0,1,0), bodyForward=new THREE.Vector3(0,0,1);
 
@@ -649,6 +649,17 @@ function buildPoseSnapshots(){
     snap.anchor.x=fixedX;
     snap.anchor.z=fixedZ;
   }
+
+  // Contact targets for the final bow. Wrists travel on a controlled path
+  // from P3 to the accepted P4 floor-contact locations.
+  applyPoseSnapshot(poseSnapshots.hands);
+  motionContacts.finalBow={
+    lStart:point('lHand'),
+    rStart:point('rHand')
+  };
+  applyPoseSnapshot(poseSnapshots.dogeza);
+  motionContacts.finalBow.lEnd=point('lHand');
+  motionContacts.finalBow.rEnd=point('rHand');
 }
 
 function setMotionCamera(){
@@ -674,6 +685,58 @@ function stopMotion(keepPose=true){
   if(!keepPose && root) applyPose(currentPose);
 }
 
+function solveArmIK(side,target){
+  const isLeft=side==='l';
+  const armKey=isLeft?'lArm':'rArm';
+  const foreKey=isLeft?'lFore':'rFore';
+  const handKey=isLeft?'lHand':'rHand';
+
+  root.updateMatrixWorld(true);
+  const shoulder=point(armKey);
+  const elbow=point(foreKey);
+  const wrist=point(handKey);
+  const l1=shoulder.distanceTo(elbow);
+  const l2=elbow.distanceTo(wrist);
+
+  const toTarget=target.clone().sub(shoulder);
+  const rawD=toTarget.length();
+  if(rawD<1e-6)return;
+  const d=Math.min(l1+l2-.001,Math.max(Math.abs(l1-l2)+.001,rawD));
+  const dir=toTarget.normalize();
+
+  let bend=bodySide.clone().multiplyScalar(isLeft?-1:1)
+    .addScaledVector(bodyUp,.12);
+  bend.sub(dir.clone().multiplyScalar(bend.dot(dir)));
+  if(bend.lengthSq()<1e-6)bend=bodyUp.clone();
+  bend.normalize();
+
+  const a=(l1*l1-l2*l2+d*d)/(2*d);
+  const h=Math.sqrt(Math.max(0,l1*l1-a*a));
+  const elbowTarget=shoulder.clone()
+    .addScaledVector(dir,a)
+    .addScaledVector(bend,h);
+
+  aimBoneTowardPoint(armKey,foreKey,elbowTarget);
+  aimBoneTowardPoint(foreKey,handKey,target);
+}
+
+function constrainFinalBowHands(t){
+  const c=motionContacts.finalBow;
+  if(!c)return;
+
+  const lTarget=new THREE.Vector3().lerpVectors(c.lStart,c.lEnd,t);
+  const rTarget=new THREE.Vector3().lerpVectors(c.rStart,c.rEnd,t);
+  solveArmIK('l',lTarget);
+  solveArmIK('r',rTarget);
+
+  // Palm remains down while fingers flatten as they reach the floor.
+  const slope=-.08*(1-t);
+  const fingerDir=V(0,slope,Math.sqrt(Math.max(.0001,1-slope*slope)));
+  aimBoneWithNormal('lHand','lIndex',fingerDir,bodyUp.clone().negate());
+  aimBoneWithNormal('rHand','rIndex',fingerDir,bodyUp.clone().negate());
+  anchor.updateMatrixWorld(true);
+}
+
 function blendSnapshots(from,to,t,floorMode='root'){
   anchor.position.lerpVectors(from.anchor,to.anchor,t);
   for(const [k,b] of Object.entries(bones)){
@@ -691,7 +754,9 @@ function blendSnapshots(from,to,t,floorMode='root'){
       anchor.updateMatrixWorld(true);
     }
   }else if(floorMode==='dogeza'){
-    // Lower body stays planted. Only stop the head/forehead from crossing the floor.
+    // Lower body stays planted. Hands follow an explicit floor-safe IK path.
+    constrainFinalBowHands(t);
+    // Stop the forehead from crossing the floor without moving the pelvis/knees.
     syncHeadShell();
     clampHeadShellAboveFloor(.006);
     anchor.updateMatrixWorld(true);
