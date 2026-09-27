@@ -328,13 +328,24 @@ function poseHandsApproachFloor(){
 }
 
 function poseHandsDogeza(){
-  // Hands should end ahead of the knees, palms/fingers directed forward on the floor.
+  // First establish the general dogeza arm shape.
   aimBone('lArm','lFore',V(-.70,-.50,.51));
   aimBone('rArm','rFore',V(.70,-.50,.51));
   aimBone('lFore','lHand',V(.70,-.50,.51));
   aimBone('rFore','rHand',V(-.70,-.50,.51));
-  aimBone('lHand','lIndex',V(0,0,1),bodySide.clone().negate());
-  aimBone('rHand','rIndex',V(0,0,1),bodySide.clone().negate());
+  root.updateMatrixWorld(true);
+
+  // The wrist joint must sit ABOVE the floor; the palm surface is what contacts it.
+  // Previously the wrist bone itself was placed at floor level, sinking the hand/forearm.
+  const wristClearance=.060;
+  const lTarget=point('lHand').addScaledVector(bodyUp,wristClearance);
+  const rTarget=point('rHand').addScaledVector(bodyUp,wristClearance);
+  solveArmIK('l',lTarget);
+  solveArmIK('r',rTarget);
+
+  // Palm down, fingers forward and parallel to the floor.
+  aimBoneWithNormal('lHand','lIndex',V(0,0,1),bodyUp.clone().negate());
+  aimBoneWithNormal('rHand','rIndex',V(0,0,1),bodyUp.clone().negate());
 }
 
 function updateBounds(){
