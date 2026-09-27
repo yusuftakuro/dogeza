@@ -618,6 +618,15 @@ function buildPoseSnapshots(){
     applyPose(name);
     poseSnapshots[name]=capturePoseSnapshot();
   }
+
+  // Static study poses are independently centered for inspection, but motion must
+  // share one horizontal world origin or the body visibly slides between poses.
+  const fixedX=poseSnapshots.stand.anchor.x;
+  const fixedZ=poseSnapshots.stand.anchor.z;
+  for(const snap of Object.values(poseSnapshots)){
+    snap.anchor.x=fixedX;
+    snap.anchor.z=fixedZ;
+  }
 }
 
 function setMotionCamera(){
@@ -643,6 +652,18 @@ function stopMotion(keepPose=true){
   if(!keepPose && root) applyPose(currentPose);
 }
 
+function blendSnapshots(from,to,t){
+  anchor.position.lerpVectors(from.anchor,to.anchor,t);
+  for(const [k,b] of Object.entries(bones)){
+    const a=from.bones[k], z=to.bones[k];
+    if(!a||!z)continue;
+    b.quaternion.slerpQuaternions(a.q,z.q,t);
+    b.position.lerpVectors(a.p,z.p,t);
+  }
+  root.updateMatrixWorld(true);
+  syncHeadShell();
+}
+
 function tweenSnapshots(from,to,duration,label){
   return new Promise(resolve=>{
     const start=performance.now();
@@ -650,16 +671,7 @@ function tweenSnapshots(from,to,duration,label){
       if(!motionPlaying){resolve(false);return;}
       const raw=Math.min(1,(now-start)/duration);
       const t=easeInOutCubic(raw);
-      anchor.position.lerpVectors(from.anchor,to.anchor,t);
-
-      for(const [k,b] of Object.entries(bones)){
-        const a=from.bones[k], z=to.bones[k];
-        if(!a||!z)continue;
-        b.quaternion.slerpQuaternions(a.q,z.q,t);
-        b.position.lerpVectors(a.p,z.p,t);
-      }
-      root.updateMatrixWorld(true);
-      syncHeadShell();
+      blendSnapshots(from,to,t);
       poseReadout.innerHTML='MOTION <b>'+label+'</b>';
 
       if(raw<1){
@@ -671,6 +683,89 @@ function tweenSnapshots(from,to,duration,label){
     };
     motionRaf=requestAnimationFrame(step);
   });
+}
+
+function runMotionQA(){
+  const saved=capturePoseSnapshot();
+  const segments=[
+    ['stand','descent'],
+    ['descent','seiza'],
+    ['seiza','hands'],
+    ['hands','dogeza']
+  ];
+  const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
+  let maxJointStep=0;
+  let maxBoneStepDeg=0;
+  let minMeshY=Infinity;
+  let lowerBodyDriftP2P3=0;
+  let prevPoints=null;
+  let prevQ=null;
+
+  for(const [aName,bName] of segments){
+    const a=poseSnapshots[aName], b=poseSnapshots[bName];
+    let lowerRef=null;
+
+    for(let i=0;i<=24;i++){
+      const t=easeInOutCubic(i/24);
+      blendSnapshots(a,b,t);
+
+      const points={};
+      for(const key of jointKeys)points[key]=point(key);
+
+      if(prevPoints){
+        for(const key of jointKeys){
+          maxJointStep=Math.max(maxJointStep,points[key].distanceTo(prevPoints[key]));
+        }
+      }
+
+      const qNow={};
+      for(const [k,bone] of Object.entries(bones)){
+        qNow[k]=bone.quaternion.clone();
+        if(prevQ?.[k]){
+          maxBoneStepDeg=Math.max(
+            maxBoneStepDeg,
+            THREE.MathUtils.radToDeg(prevQ[k].angleTo(qNow[k]))
+          );
+        }
+      }
+
+      const box=updateBounds();
+      minMeshY=Math.min(minMeshY,box.min.y);
+
+      if(aName==='seiza'&&bName==='hands'){
+        const lower=['lCalf','rCalf','lFoot','rFoot'];
+        if(!lowerRef){
+          lowerRef={};
+          for(const key of lower)lowerRef[key]=point(key);
+        }else{
+          for(const key of lower){
+            lowerBodyDriftP2P3=Math.max(
+              lowerBodyDriftP2P3,
+              point(key).distanceTo(lowerRef[key])
+            );
+          }
+        }
+      }
+
+      prevPoints=points;
+      prevQ=qNow;
+    }
+  }
+
+  applyPoseSnapshot(saved);
+  window.__DOGEZA_MOTION_QA__={
+    maxJointStep:+maxJointStep.toFixed(4),
+    maxBoneStepDeg:+maxBoneStepDeg.toFixed(2),
+    minMeshY:+minMeshY.toFixed(4),
+    lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
+    pass:{
+      noFloorPenetration:minMeshY>=-.02,
+      noFrameJump:maxJointStep<.12,
+      noRotationFlip:maxBoneStepDeg<18,
+      stableLowerBodyP2P3:lowerBodyDriftP2P3<.025
+    }
+  };
+  window.__DOGEZA_MOTION_QA__.pass.all=Object.values(window.__DOGEZA_MOTION_QA__.pass).every(Boolean);
 }
 
 async function playMotion(){
@@ -784,6 +879,7 @@ new GLTFLoader().load(modelURL,gltf=>{
   const initialPose=['stand','descent','seiza','hands','dogeza'].includes(requestedPose)?requestedPose:'stand';
   buildPoseSnapshots();
   applyPose(initialPose);
+  runMotionQA();
   boneStatus.textContent += ' / SKIN '+skinned;
 
   loading.classList.add('hide');
