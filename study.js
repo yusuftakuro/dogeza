@@ -720,6 +720,13 @@ function solveArmIK(side,target){
   aimBoneTowardPoint(foreKey,handKey,target);
 }
 
+function reblendBone(key,from,to,t){
+  const b=bones[key], a=from.bones[key], z=to.bones[key];
+  if(!b||!a||!z)return;
+  b.quaternion.slerpQuaternions(a.q,z.q,t);
+  b.position.lerpVectors(a.p,z.p,t);
+}
+
 function constrainFinalBowHands(t){
   const c=motionContacts.finalBow;
   if(!c)return;
@@ -754,9 +761,18 @@ function blendSnapshots(from,to,t,floorMode='root'){
       anchor.updateMatrixWorld(true);
     }
   }else if(floorMode==='dogeza'){
+    // The torso initiates the bow; neck/head follow later instead of diving
+    // toward the floor at the same rate as the trunk.
+    const headRaw=THREE.MathUtils.clamp((t-.24)/.76,0,1);
+    const headT=easeInOutCubic(headRaw);
+    reblendBone('neck',from,to,headT);
+    reblendBone('head',from,to,headT);
+    anchor.updateMatrixWorld(true);
+
     // Lower body stays planted. Hands follow an explicit floor-safe IK path.
     constrainFinalBowHands(t);
-    // Stop the forehead from crossing the floor without moving the pelvis/knees.
+
+    // Final safety contact for the forehead proxy; pelvis/knees never move.
     syncHeadShell();
     clampHeadShellAboveFloor(.006);
     anchor.updateMatrixWorld(true);
