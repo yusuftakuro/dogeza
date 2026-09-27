@@ -19,8 +19,10 @@ canvas{display:block;width:100%;height:100%}
 .cross{position:absolute;left:50%;top:50%;width:11px;height:11px;transform:translate(-50%,-50%);opacity:.3}
 .cross:before,.cross:after{content:"";position:absolute;background:var(--accent)}
 .cross:before{left:5px;top:0;width:1px;height:11px}.cross:after{left:0;top:5px;width:11px;height:1px}
-.readout{position:absolute;left:18px;bottom:calc(env(safe-area-inset-bottom) + 82px);font:500 8px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;color:var(--dim)}
+.readout{position:absolute;left:18px;bottom:calc(env(safe-area-inset-bottom) + 118px);font:500 8px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;color:var(--dim)}
 .readout b{color:var(--ink);font-weight:500}
+.motion{pointer-events:auto;position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 64px);height:34px;border:1px solid rgba(232,235,231,.20);background:rgba(3,4,5,.78);color:rgba(232,235,231,.74);font:600 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em}
+.motion.active{border-color:var(--accent);color:var(--ink)}
 .poses{pointer-events:auto;position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
 .pose{appearance:none;border:1px solid rgba(232,235,231,.16);background:rgba(3,4,5,.74);color:rgba(232,235,231,.55);height:42px;font:600 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}
 .pose.active{border-color:var(--accent);color:var(--ink)}
@@ -37,7 +39,7 @@ canvas{display:block;width:100%;height:100%}
 <div class="loading" id="loading">LOADING HUMAN FORM</div>
 <div class="hud">
   <div class="top">
-    <div><div class="brand">DOGEZA</div><div class="sub">HUMAN FORM STUDY / 20</div></div>
+    <div><div class="brand">DOGEZA</div><div class="sub">MOTION STUDY / 21</div></div>
     <div class="status"><div>SKINNED MESH</div><div id="boneStatus">BONES —</div></div>
   </div>
   <div class="cross"></div>
@@ -47,6 +49,7 @@ canvas{display:block;width:100%;height:100%}
     <div>DRAG <b>ORBIT CAMERA</b></div>
     <div id="poseReadout">POSE <b>STAND</b></div>
   </div>
+  <button class="motion" id="motionBtn">PLAY MOTION</button>
   <div class="poses">
     <button class="pose active" data-pose="stand">P0<br>STAND</button>
     <button class="pose" data-pose="descent">P1<br>DESCENT</button>
@@ -55,6 +58,6 @@ canvas{display:block;width:100%;height:100%}
     <button class="pose" data-pose="dogeza">P4<br>DOGEZA</button>
   </div>
 </div>
-<script type="module" src="study.js?v=21"></script>
+<script type="module" src="study.js?v=22"></script>
 </body>
 </html>
