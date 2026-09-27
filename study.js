@@ -766,6 +766,17 @@ function runMotionQA(){
     }
   };
   window.__DOGEZA_MOTION_QA__.pass.all=Object.values(window.__DOGEZA_MOTION_QA__.pass).every(Boolean);
+
+  if(new URLSearchParams(location.search).get('motionqa')==='1'){
+    let pre=document.getElementById('motionQaData');
+    if(!pre){
+      pre=document.createElement('pre');
+      pre.id='motionQaData';
+      pre.style.cssText='position:fixed;left:8px;top:150px;z-index:99;background:#000d;color:#fff;font:10px/1.35 monospace;padding:8px;max-width:94vw;white-space:pre-wrap;pointer-events:none';
+      document.body.appendChild(pre);
+    }
+    pre.textContent=JSON.stringify(window.__DOGEZA_MOTION_QA__,null,2);
+  }
 }
 
 async function playMotion(){
