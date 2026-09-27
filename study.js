@@ -861,6 +861,35 @@ function squad(q0,q1,s0,s1,u){
   return new THREE.Quaternion().slerpQuaternions(a,b,2*u*(1-u)).normalize();
 }
 
+function constrainEarlyArms(progress){
+  const seizaT=motionTrack.find(x=>x.name==='seiza').t;
+  const instepT=motionTrack.find(x=>x.name==='instepsDown').t;
+  if(progress>=seizaT)return;
+
+  const keys=['lArm','rArm','lFore','rFore','lHand','rHand'];
+
+  if(progress<=instepT){
+    // Before the body has settled onto both knees, arms stay beside the torso.
+    // Do not allow future floor-reaching keyframes to leak backward through SQUAD.
+    const src=poseSnapshots.descent;
+    for(const key of keys){
+      bones[key].quaternion.copy(src.bones[key].q);
+      bones[key].position.copy(src.bones[key].p);
+    }
+  }else{
+    // Only after the insteps are down do the hands move onto the thighs.
+    const u=THREE.MathUtils.clamp((progress-instepT)/(seizaT-instepT),0,1);
+    const w=u*u*(3-2*u);
+    const a=poseSnapshots.instepsDown;
+    const b=poseSnapshots.seiza;
+    for(const key of keys){
+      bones[key].quaternion.slerpQuaternions(a.bones[key].q,b.bones[key].q,w);
+      bones[key].position.lerpVectors(a.bones[key].p,b.bones[key].p,w);
+    }
+  }
+  anchor.updateMatrixWorld(true);
+}
+
 function sampleSpline(progress,applyFloor=true){
   const {a,b,u}=motionIntervalAt(progress);
   const i=motionTrack.indexOf(a);
@@ -880,6 +909,7 @@ function sampleSpline(progress,applyFloor=true){
     bone.quaternion.copy(squad(d.qs[i],d.qs[j],d.controls[i],d.controls[j],u));
   }
   anchor.updateMatrixWorld(true);
+  constrainEarlyArms(progress);
 
   if(applyFloor && progress<=motionTrack.find(x=>x.name==='seiza').t && floorProfile.length){
     const n=floorProfile.length-1;
