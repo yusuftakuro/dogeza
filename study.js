@@ -674,7 +674,7 @@ function stopMotion(keepPose=true){
   if(!keepPose && root) applyPose(currentPose);
 }
 
-function blendSnapshots(from,to,t){
+function blendSnapshots(from,to,t,projectToFloor=true){
   anchor.position.lerpVectors(from.anchor,to.anchor,t);
   for(const [k,b] of Object.entries(bones)){
     const a=from.bones[k], z=to.bones[k];
@@ -683,6 +683,14 @@ function blendSnapshots(from,to,t){
     b.position.lerpVectors(a.p,z.p,t);
   }
   root.updateMatrixWorld(true);
+
+  if(projectToFloor){
+    const box=updateBounds();
+    if(box.min.y<0){
+      anchor.position.y+=-box.min.y;
+      root.updateMatrixWorld(true);
+    }
+  }
   syncHeadShell();
 }
 
@@ -721,7 +729,9 @@ function runMotionQA(){
   let maxBoneStepDeg=0;
   let minMeshY=Infinity;
   let lowerBodyDriftP2P3=0;
+  let lowerBodyDriftP3P4=0;
   const segmentMinY={};
+  const segmentRootCorrection={};
   let prevPoints=null;
   let prevQ=null;
 
@@ -729,11 +739,18 @@ function runMotionQA(){
     const a=poseSnapshots[aName], b=poseSnapshots[bName];
     const segKey=aName+'->'+bName;
     segmentMinY[segKey]=Infinity;
+    segmentRootCorrection[segKey]=0;
     let lowerRef=null;
+    let lowerRefP3P4=null;
 
     for(let i=0;i<=24;i++){
       const t=easeInOutCubic(i/24);
-      blendSnapshots(a,b,t);
+      const rawAnchorY=THREE.MathUtils.lerp(a.anchor.y,b.anchor.y,t);
+      blendSnapshots(a,b,t,true);
+      segmentRootCorrection[segKey]=Math.max(
+        segmentRootCorrection[segKey],
+        anchor.position.y-rawAnchorY
+      );
 
       const points={};
       for(const key of jointKeys)points[key]=point(key);
@@ -774,6 +791,21 @@ function runMotionQA(){
         }
       }
 
+      if(aName==='hands'&&bName==='dogeza'){
+        const lower=['lCalf','rCalf','lFoot','rFoot'];
+        if(!lowerRefP3P4){
+          lowerRefP3P4={};
+          for(const key of lower)lowerRefP3P4[key]=point(key);
+        }else{
+          for(const key of lower){
+            lowerBodyDriftP3P4=Math.max(
+              lowerBodyDriftP3P4,
+              point(key).distanceTo(lowerRefP3P4[key])
+            );
+          }
+        }
+      }
+
       prevPoints=points;
       prevQ=qNow;
     }
@@ -785,12 +817,15 @@ function runMotionQA(){
     maxBoneStepDeg:+maxBoneStepDeg.toFixed(2),
     minMeshY:+minMeshY.toFixed(4),
     lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
+    lowerBodyDriftP3P4:+lowerBodyDriftP3P4.toFixed(4),
     segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
+    segmentRootCorrection:Object.fromEntries(Object.entries(segmentRootCorrection).map(([k,v])=>[k,+v.toFixed(4)])),
     pass:{
       noFloorPenetration:minMeshY>=-.02,
       noFrameJump:maxJointStep<.12,
       noRotationFlip:maxBoneStepDeg<18,
-      stableLowerBodyP2P3:lowerBodyDriftP2P3<.025
+      stableLowerBodyP2P3:lowerBodyDriftP2P3<.025,
+      stableLowerBodyP3P4:lowerBodyDriftP3P4<.025
     }
   };
   window.__DOGEZA_MOTION_QA__.pass.all=Object.values(window.__DOGEZA_MOTION_QA__.pass).every(Boolean);
