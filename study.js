@@ -1346,7 +1346,21 @@ new GLTFLoader().load(modelURL,gltf=>{
   buildPoseSnapshots();
   buildMotionSpline();
   buildFloorProfile();
-  applyPose(initialPose);
+
+  const params=new URLSearchParams(location.search);
+  const frameParam=params.get('frame');
+  const fixedFrame=frameParam!==null ? Number(frameParam) : NaN;
+
+  if(Number.isFinite(fixedFrame)){
+    const p=THREE.MathUtils.clamp(fixedFrame,0,1);
+    sampleSpline(p,true);
+    setMotionCamera();
+    poseReadout.innerHTML='FRAME <b>'+p.toFixed(3)+'</b>';
+    if(motionBtn)motionBtn.style.display='none';
+  }else{
+    applyPose(initialPose);
+  }
+
   runMotionQA();
   boneStatus.textContent += ' / SKIN '+skinned;
 
