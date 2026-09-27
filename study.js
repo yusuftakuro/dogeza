@@ -312,10 +312,12 @@ function poseTorsoUpright(){
 }
 
 function poseTorsoPreBow(){
-  aimBone('spine','spine1',V(0,.97,.24));
-  aimBone('spine1','spine2',V(0,.95,.31));
-  aimBone('spine2','neck',V(0,.93,.37));
-  aimBone('neck','head',V(0,.90,.44));
+  // Must be deeper than P3 HANDS. Never allow the torso to "rewind" upright
+  // between reaching forward and planting the palms.
+  aimBone('spine','spine1',V(0,.82,.57));
+  aimBone('spine1','spine2',V(0,.73,.68));
+  aimBone('spine2','neck',V(0,.63,.78));
+  aimBone('neck','head',V(0,.56,.83));
 }
 
 function poseTorsoLean(){
@@ -953,6 +955,10 @@ function runMotionQA(){
   let prevQ=null;
   let worstState=null;
   let worstMeta=null;
+  let bowReverseUp=0;
+  let bowReverseBack=0;
+  let prevBowHead=null;
+  let prevBowChest=null;
 
   for(const [aName,bName,floorMode] of segments){
     const a=poseSnapshots[aName], b=poseSnapshots[bName];
@@ -1014,6 +1020,25 @@ function runMotionQA(){
         }
       }
 
+      if((aName==='hands'&&bName==='handsPlant')||(aName==='handsPlant'&&bName==='dogeza')){
+        const headP=point('head');
+        const chestP=point('spine2');
+        if(prevBowHead&&prevBowChest){
+          bowReverseUp=Math.max(
+            bowReverseUp,
+            headP.clone().sub(prevBowHead).dot(bodyUp),
+            chestP.clone().sub(prevBowChest).dot(bodyUp)
+          );
+          bowReverseBack=Math.max(
+            bowReverseBack,
+            -headP.clone().sub(prevBowHead).dot(bodyForward),
+            -chestP.clone().sub(prevBowChest).dot(bodyForward)
+          );
+        }
+        prevBowHead=headP;
+        prevBowChest=chestP;
+      }
+
       if(aName==='handsPlant'&&bName==='dogeza'){
         const lower=['lCalf','rCalf','lFoot','rFoot'];
         if(!lowerRefP3P4){
@@ -1042,6 +1067,8 @@ function runMotionQA(){
     minMeshY:+minMeshY.toFixed(4),
     lowerBodyDriftP2P3:+lowerBodyDriftP2P3.toFixed(4),
     lowerBodyDriftP3P4:+lowerBodyDriftP3P4.toFixed(4),
+    bowReverseUp:+bowReverseUp.toFixed(4),
+    bowReverseBack:+bowReverseBack.toFixed(4),
     worstPenetration:worstMeta,
     floorInfluence,
     segmentMinY:Object.fromEntries(Object.entries(segmentMinY).map(([k,v])=>[k,+v.toFixed(4)])),
@@ -1051,7 +1078,8 @@ function runMotionQA(){
       noFrameJump:maxJointStep<.12,
       noRotationFlip:maxBoneStepDeg<18,
       stableLowerBodyP2P3:lowerBodyDriftP2P3<.025,
-      stableLowerBodyP3P4:lowerBodyDriftP3P4<.025
+      stableLowerBodyP3P4:lowerBodyDriftP3P4<.025,
+      noBowRewind:bowReverseUp<.012 && bowReverseBack<.012
     }
   };
   window.__DOGEZA_MOTION_QA__.pass.all=Object.values(window.__DOGEZA_MOTION_QA__.pass).every(Boolean);
@@ -1076,14 +1104,14 @@ async function playMotion(){
   setMotionCamera();
 
   const seq=[
-    ['stand','leftStep',320,'LEFT FOOT BACK','root'],
-    ['leftStep','leftKnee',440,'LEFT KNEE','root'],
-    ['leftKnee','bothKneesTucked',340,'RIGHT KNEE','root'],
-    ['bothKneesTucked','instepsDown',260,'UNTUCK TOES','root'],
-    ['instepsDown','seiza',420,'SIT TO HEELS → P2','root'],
-    ['seiza','hands',480,'HANDS FORWARD → P3','root'],
-    ['hands','handsPlant',300,'PALMS CONTACT','root'],
-    ['handsPlant','dogeza',760,'BOW → P4','dogeza']
+    ['stand','leftStep',180,'DESCENT','root'],
+    ['leftStep','leftKnee',260,'KNEES DOWN','root'],
+    ['leftKnee','bothKneesTucked',180,'KNEES DOWN','root'],
+    ['bothKneesTucked','instepsDown',150,'INSTEP DOWN','root'],
+    ['instepsDown','seiza',280,'SETTLE → P2','root'],
+    ['seiza','hands',420,'REACH → P3','root'],
+    ['hands','handsPlant',220,'PALMS CONTACT','root'],
+    ['handsPlant','dogeza',620,'BOW → P4','dogeza']
   ];
 
   applyPoseSnapshot(poseSnapshots.stand);
