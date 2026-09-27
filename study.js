@@ -244,13 +244,46 @@ function poseLegsDescent(){
   aimBone('rToe','rToeEnd',V(0,0,1));
 }
 
-function poseLegsKneel(){
-  // Hidden transition keyframe: knees reach the floor first, then the hips sit back.
-  // This prevents the shins/feet from cutting through the floor on the way to seiza.
-  aimBone('lThigh','lCalf',V(-.025,-.90,.435));
-  aimBone('rThigh','rCalf',V(.025,-.90,.435));
-  aimBone('lCalf','lFoot',V(0,-.08,-.997));
-  aimBone('rCalf','rFoot',V(0,-.08,-.997));
+function poseLegsLeftStep(){
+  // Formal entry: left foot retreats first while the torso stays upright.
+  poseLegsStand();
+  aimBone('lThigh','lCalf',V(-.02,-.985,-.17));
+  aimBone('lCalf','lFoot',V(0,-.996,-.09));
+  aimBone('lFoot','lToe',V(0,0,1));
+  aimBone('lToe','lToeEnd',V(0,0,1));
+}
+
+function poseLegsLeftKnee(){
+  // Left knee reaches the floor; right leg still supports most of the body.
+  aimBone('lThigh','lCalf',V(-.03,-.91,.41));
+  aimBone('lCalf','lFoot',V(0,-.20,-.98));
+  aimBone('lFoot','lToe',V(0,-.72,-.69));
+  aimBone('lToe','lToeEnd',V(0,0,-1));
+
+  aimBone('rThigh','rCalf',V(.02,-.965,.26));
+  aimBone('rCalf','rFoot',V(0,-.985,-.17));
+  aimBone('rFoot','rToe',V(0,0,1));
+  aimBone('rToe','rToeEnd',V(0,0,1));
+}
+
+function poseLegsBothKneesTucked(){
+  // Both knees are down, but the toes remain tucked under: pelvis is still high.
+  aimBone('lThigh','lCalf',V(-.03,-.84,.54));
+  aimBone('rThigh','rCalf',V(.03,-.84,.54));
+  aimBone('lCalf','lFoot',V(0,-.20,-.98));
+  aimBone('rCalf','rFoot',V(0,-.20,-.98));
+  aimBone('lFoot','lToe',V(0,-.76,-.65));
+  aimBone('rFoot','rToe',V(0,-.76,-.65));
+  aimBone('lToe','lToeEnd',V(0,0,-1));
+  aimBone('rToe','rToeEnd',V(0,0,-1));
+}
+
+function poseLegsInstepsDown(){
+  // Knees remain planted; toes untuck and the insteps settle onto the floor.
+  aimBone('lThigh','lCalf',V(-.03,-.82,.57));
+  aimBone('rThigh','rCalf',V(.03,-.82,.57));
+  aimBone('lCalf','lFoot',V(0,-.15,-.989));
+  aimBone('rCalf','rFoot',V(0,-.15,-.989));
   aimBone('lFoot','lToe',V(0,0,-1));
   aimBone('rFoot','rToe',V(0,0,-1));
   aimBone('lToe','lToeEnd',V(0,0,-1));
@@ -276,6 +309,13 @@ function poseTorsoUpright(){
   aimBone('spine1','spine2',V(0,1,.01));
   aimBone('spine2','neck',V(0,1,.015));
   aimBone('neck','head',V(0,.995,.10));
+}
+
+function poseTorsoPreBow(){
+  aimBone('spine','spine1',V(0,.97,.24));
+  aimBone('spine1','spine2',V(0,.95,.31));
+  aimBone('spine2','neck',V(0,.93,.37));
+  aimBone('neck','head',V(0,.90,.44));
 }
 
 function poseTorsoLean(){
@@ -645,6 +685,14 @@ function cloneSnapshot(src){
   };
 }
 
+function captureHiddenPose(setup){
+  resetPose();
+  anchor.position.set(0,0,0);
+  setup();
+  alignToFloorAndCenter(null);
+  return capturePoseSnapshot();
+}
+
 function buildPoseSnapshots(){
   const order=['stand','descent','seiza','hands','dogeza'];
   for(const name of order){
@@ -652,32 +700,54 @@ function buildPoseSnapshots(){
     poseSnapshots[name]=capturePoseSnapshot();
   }
 
-  // Hidden BOTH-KNEES keyframe.
-  resetPose();
-  anchor.position.set(0,0,0);
-  poseLegsKneel();
-  poseTorsoUpright();
-  poseArmsAtSides();
-  alignToFloorAndCenter(null);
-  poseSnapshots.bothKnees=capturePoseSnapshot();
+  poseSnapshots.leftStep=captureHiddenPose(()=>{
+    poseLegsLeftStep();
+    poseTorsoUpright();
+    poseArmsAtSides();
+  });
 
-  // Hidden LEFT-KNEE keyframe.
-  // Start from P1, but only the left leg has completed the kneeling action.
-  poseSnapshots.leftKnee=cloneSnapshot(poseSnapshots.descent);
-  for(const key of ['lThigh','lCalf','lFoot','lToe','lToeEnd']){
-    poseSnapshots.leftKnee.bones[key]={
-      q:poseSnapshots.bothKnees.bones[key].q.clone(),
-      p:poseSnapshots.bothKnees.bones[key].p.clone()
-    };
-  }
-  poseSnapshots.leftKnee.anchor.y=THREE.MathUtils.lerp(
-    poseSnapshots.descent.anchor.y,
-    poseSnapshots.bothKnees.anchor.y,
-    .58
-  );
+  poseSnapshots.leftKnee=captureHiddenPose(()=>{
+    poseLegsLeftKnee();
+    poseTorsoUpright();
+    poseArmsAtSides();
+  });
 
-  // Static study poses are independently centered for inspection, but motion must
-  // share one horizontal world origin or the body visibly slides between poses.
+  poseSnapshots.bothKneesTucked=captureHiddenPose(()=>{
+    poseLegsBothKneesTucked();
+    poseTorsoUpright();
+    poseArmsAtSides();
+  });
+
+  poseSnapshots.instepsDown=captureHiddenPose(()=>{
+    poseLegsInstepsDown();
+    poseTorsoUpright();
+    poseArmsAtSides();
+  });
+
+  // Hands make contact before the deep bow. Lower body remains full seiza.
+  poseSnapshots.handsPlant=captureHiddenPose(()=>{
+    poseLegsSeiza();
+    poseTorsoPreBow();
+
+    // Use the accepted final contact locations, but keep the torso high.
+    applyPoseSnapshot(poseSnapshots.dogeza);
+    const lFinal=point('lHand');
+    const rFinal=point('rHand');
+
+    resetPose();
+    anchor.position.set(0,0,0);
+    poseLegsSeiza();
+    poseTorsoPreBow();
+    poseHandsOnThighs();
+    anchor.updateMatrixWorld(true);
+
+    solveArmIK('l',lFinal);
+    solveArmIK('r',rFinal);
+    aimBoneWithNormal('lHand','lIndex',V(0,0,1),bodyUp.clone().negate());
+    aimBoneWithNormal('rHand','rIndex',V(0,0,1),bodyUp.clone().negate());
+  });
+
+  // Motion shares one horizontal world origin; no side-to-side recentering.
   const fixedX=poseSnapshots.stand.anchor.x;
   const fixedZ=poseSnapshots.stand.anchor.z;
   for(const snap of Object.values(poseSnapshots)){
@@ -685,16 +755,15 @@ function buildPoseSnapshots(){
     snap.anchor.z=fixedZ;
   }
 
-  // Contact targets for the final bow. Wrists travel on a controlled path
-  // from P3 to the accepted P4 floor-contact locations.
-  applyPoseSnapshot(poseSnapshots.hands);
+  // Final bow: palms should already be planted, so wrists remain at fixed contact targets.
+  applyPoseSnapshot(poseSnapshots.handsPlant);
   motionContacts.finalBow={
     lStart:point('lHand'),
     rStart:point('rHand')
   };
   applyPoseSnapshot(poseSnapshots.dogeza);
-  motionContacts.finalBow.lEnd=point('lHand');
-  motionContacts.finalBow.rEnd=point('rHand');
+  motionContacts.finalBow.lEnd=motionContacts.finalBow.lStart.clone();
+  motionContacts.finalBow.rEnd=motionContacts.finalBow.rStart.clone();
 }
 
 function setMotionCamera(){
@@ -796,18 +865,9 @@ function blendSnapshots(from,to,t,floorMode='root'){
       anchor.updateMatrixWorld(true);
     }
   }else if(floorMode==='dogeza'){
-    // The torso initiates the bow; neck/head follow later instead of diving
-    // toward the floor at the same rate as the trunk.
-    const headRaw=THREE.MathUtils.clamp((t-.24)/.76,0,1);
-    const headT=easeInOutCubic(headRaw);
-    reblendBone('neck',from,to,headT);
-    reblendBone('head',from,to,headT);
-    anchor.updateMatrixWorld(true);
-
-    // Lower body stays planted. Hands follow an explicit floor-safe IK path.
+    // Palms are already planted; shoulders/elbows solve around fixed wrists while
+    // the trunk and head lower as one continuous bow.
     constrainFinalBowHands(t);
-
-    // Final safety contact for the forehead proxy; pelvis/knees never move.
     syncHeadShell();
     clampHeadShellAboveFloor(.006);
     anchor.updateMatrixWorld(true);
@@ -872,12 +932,14 @@ function measureFloorInfluence(state){
 function runMotionQA(){
   const saved=capturePoseSnapshot();
   const segments=[
-    ['stand','descent','root'],
-    ['descent','leftKnee','root'],
-    ['leftKnee','bothKnees','root'],
-    ['bothKnees','seiza','root'],
+    ['stand','leftStep','root'],
+    ['leftStep','leftKnee','root'],
+    ['leftKnee','bothKneesTucked','root'],
+    ['bothKneesTucked','instepsDown','root'],
+    ['instepsDown','seiza','root'],
     ['seiza','hands','root'],
-    ['hands','dogeza','dogeza']
+    ['hands','handsPlant','root'],
+    ['handsPlant','dogeza','dogeza']
   ];
   const jointKeys=['head','lHand','rHand','lCalf','rCalf','lFoot','rFoot'];
   let maxJointStep=0;
@@ -952,7 +1014,7 @@ function runMotionQA(){
         }
       }
 
-      if(aName==='hands'&&bName==='dogeza'){
+      if(aName==='handsPlant'&&bName==='dogeza'){
         const lower=['lCalf','rCalf','lFoot','rFoot'];
         if(!lowerRefP3P4){
           lowerRefP3P4={};
@@ -1014,12 +1076,14 @@ async function playMotion(){
   setMotionCamera();
 
   const seq=[
-    ['stand','descent',520,'P0 → P1','root'],
-    ['descent','leftKnee',480,'LEFT KNEE','root'],
-    ['leftKnee','bothKnees',360,'RIGHT KNEE','root'],
-    ['bothKnees','seiza',520,'SIT BACK → P2','root'],
-    ['seiza','hands',700,'P2 → P3','root'],
-    ['hands','dogeza',900,'P3 → P4','dogeza']
+    ['stand','leftStep',320,'LEFT FOOT BACK','root'],
+    ['leftStep','leftKnee',440,'LEFT KNEE','root'],
+    ['leftKnee','bothKneesTucked',340,'RIGHT KNEE','root'],
+    ['bothKneesTucked','instepsDown',260,'UNTUCK TOES','root'],
+    ['instepsDown','seiza',420,'SIT TO HEELS → P2','root'],
+    ['seiza','hands',480,'HANDS FORWARD → P3','root'],
+    ['hands','handsPlant',300,'PALMS CONTACT','root'],
+    ['handsPlant','dogeza',760,'BOW → P4','dogeza']
   ];
 
   applyPoseSnapshot(poseSnapshots.stand);
