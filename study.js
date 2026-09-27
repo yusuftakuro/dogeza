@@ -891,8 +891,11 @@ function sampleSpline(progress,applyFloor=true){
     anchor.updateMatrixWorld(true);
   }
 
-  if(b.name==='dogeza'){
-    constrainFinalBowHands(u);
+  if(b.name==='handsPlant'){
+    const w=u*u*(3-2*u);
+    blendHandsToContact(w);
+  }else if(b.name==='dogeza'){
+    constrainFinalBowHands();
     syncHeadShell();
     clampHeadShellAboveFloor(.006);
     anchor.updateMatrixWorld(true);
@@ -1011,21 +1014,32 @@ function reblendBone(key,from,to,t){
   b.position.lerpVectors(a.p,z.p,t);
 }
 
-function constrainFinalBowHands(t){
+function blendHandsToContact(weight){
   const c=motionContacts.finalBow;
   if(!c)return;
+  const w=THREE.MathUtils.clamp(weight,0,1);
+  if(w<=0)return;
 
-  const lTarget=new THREE.Vector3().lerpVectors(c.lStart,c.lEnd,t);
-  const rTarget=new THREE.Vector3().lerpVectors(c.rStart,c.rEnd,t);
-  solveArmIK('l',lTarget);
-  solveArmIK('r',rTarget);
+  const keys=['lArm','rArm','lFore','rFore','lHand','rHand'];
+  const original=Object.fromEntries(keys.map(k=>[k,bones[k].quaternion.clone()]));
 
-  // Palm remains down while fingers flatten as they reach the floor.
-  const slope=-.08*(1-t);
-  const fingerDir=V(0,slope,Math.sqrt(Math.max(.0001,1-slope*slope)));
-  aimBoneWithNormal('lHand','lIndex',fingerDir,bodyUp.clone().negate());
-  aimBoneWithNormal('rHand','rIndex',fingerDir,bodyUp.clone().negate());
+  // Solve the fully planted hand pose first.
+  solveArmIK('l',c.lStart);
+  solveArmIK('r',c.rStart);
+  aimBoneWithNormal('lHand','lIndex',V(0,0,1),bodyUp.clone().negate());
+  aimBoneWithNormal('rHand','rIndex',V(0,0,1),bodyUp.clone().negate());
   anchor.updateMatrixWorld(true);
+
+  // Blend into IK gradually so the contact constraint never switches on abruptly.
+  for(const key of keys){
+    const solved=bones[key].quaternion.clone();
+    bones[key].quaternion.slerpQuaternions(original[key],solved,w);
+  }
+  anchor.updateMatrixWorld(true);
+}
+
+function constrainFinalBowHands(){
+  blendHandsToContact(1);
 }
 
 function blendSnapshots(from,to,t,floorMode='root'){
