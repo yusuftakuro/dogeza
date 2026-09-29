@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>NINJA KEBAB — Core Prototype</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:#090909;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+  body{display:grid;place-items:center}
+  #wrap{position:relative;width:min(100vw,480px);height:100dvh;max-height:900px;background:#111;overflow:hidden;touch-action:none;user-select:none}
+  canvas{width:100%;height:100%;display:block;touch-action:none}
+  #start,#end{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;background:linear-gradient(180deg,rgba(5,5,5,.60),rgba(5,5,5,.90));z-index:4}
+  #end{display:none}
+  h1{margin:0 0 8px;font-size:clamp(34px,11vw,58px);line-height:.92;letter-spacing:-.055em}
+  .sub{font-size:14px;line-height:1.6;color:#d6d6d6;max-width:330px}
+  .rule{margin:18px 0 22px;padding:12px 14px;border:1px solid #353535;border-radius:14px;background:#151515;font-size:13px;line-height:1.6;color:#eee;max-width:340px}
+  button{border:0;border-radius:999px;padding:14px 24px;font-size:17px;font-weight:800;background:#f1f1f1;color:#111;min-width:190px}
+  .tiny{margin-top:11px;color:#8f8f8f;font-size:11px}
+  #endScore{font-size:58px;font-weight:900;line-height:1;margin:5px 0 6px}
+  #grade{font-size:18px;font-weight:800;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="start">
+    <h1>NINJA<br>KEBAB</h1>
+    <div class="sub">回るドネルの<strong>焼けた外側だけ</strong>を削ぎ続ける、60秒の片手スコアアタック。</div>
+    <div class="rule">右側を1本指でドラッグ<br><b>上下＝切る場所　／　左右＝切る深さ</b><br>焼けた橙色を狙う。深すぎると生肉、遅すぎると焦げ。指を離すとFLOWは終了。</div>
+    <button id="startBtn" type="button">修行開始</button>
+    <div id="runtimeStatus" class="tiny">JS確認中…</div>
+    <div class="tiny">Core mechanic prototype / portrait mobile</div>
+  </div>
+  <div id="end">
+    <div class="sub">修行結果</div>
+    <div id="endScore">0</div>
+    <div id="grade">見習い</div>
+    <button id="retryBtn">もう一回</button>
+    <div class="tiny">PERFECT率と最長FLOWも画面下に表示</div>
+  </div>
+</div>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const wrap=document.getElementById('wrap');
+const startEl=document.getElementById('start');
+const endEl=document.getElementById('end');
+const startBtn=document.getElementById('startBtn');
+const retryBtn=document.getElementById('retryBtn');
+const endScore=document.getElementById('endScore');
+const gradeEl=document.getElementById('grade');
+const runtimeStatus=document.getElementById('runtimeStatus');
+if(runtimeStatus) runtimeStatus.textContent='READY — タップで開始';
+
+let W=390,H=780,dpr=1;
+let state='menu';
+let score=0, timeLeft=60, startedAt=0, lastTs=0;
+let pointer={down:false,x:W*.9,y:H*.48,depth:0};
+let bands=[];
+let particles=[];
+let floaters=[];
+let flow=1, flowCuts=0, bestFlow=1, perfect=0, totalCuts=0;
+let lastCutAt=0;
+let shake=0;
+let audioCtx=null;
+const BAND_COUNT=34;
+const meat={cx:W*.48,top:H*.18,bottom:H*.72,baseR:74};
+
+function resize(){
+  const r=wrap.getBoundingClientRect();
+  W=Math.max(320,Math.round(r.width)); H=Math.max(560,Math.round(r.height));
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  meat.cx=W*.48; meat.top=H*.19; meat.bottom=H*.73; meat.baseR=Math.min(82,W*.20);
+  if(bands.length) rebuildBandGeometry();
+}
+window.addEventListener('resize',resize,{passive:true});
+resize();
+
+function rand(a,b){return a+Math.random()*(b-a)}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function lerp(a,b,t){return a+(b-a)*t}
+function ease(t){return .5-.5*Math.cos(Math.PI*t)}
+
+function baseProfile(t){
+  const belly=Math.sin(Math.PI*t);
+  const asym=1 + .035*Math.sin(t*10.7) + .025*Math.sin(t*21.1+1.7);
+  return meat.baseR*(.48+.55*Math.pow(belly,.72))*asym;
+}
+function rebuildBandGeometry(){
+  const bh=(meat.bottom-meat.top)/BAND_COUNT;
+  bands.forEach((b,i)=>{b.y=meat.top+(i+.5)*bh;b.h=bh+1;});
+}
+function resetBands(){
+  bands=[];
+  const bh=(meat.bottom-meat.top)/BAND_COUNT;
+  for(let i=0;i<BAND_COUNT;i++){
+    const t=(i+.5)/BAND_COUNT;
+    bands.push({
+      y:meat.top+(i+.5)*bh,h:bh+1,
+      r:baseProfile(t)*rand(.96,1.04),
+      heat:rand(.20,.82),
+      cookRate:rand(.075,.125),
+      scar:0
+    });
+  }
+}
+
+function begin(){
+  state='play'; starting=false; score=0; timeLeft=60; flow=1; flowCuts=0; bestFlow=1; perfect=0; totalCuts=0;
+  particles=[];floaters=[];pointer.down=false; lastCutAt=0; shake=0;
+  resetBands();
+  startedAt=performance.now(); lastTs=startedAt;
+  startEl.style.display='none'; endEl.style.display='none';
+  try{ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+  requestAnimationFrame(loop);
+}
+function finish(){
+  state='end';pointer.down=false;
+  endScore.textContent=Math.round(score).toLocaleString();
+  const acc= totalCuts? Math.round(perfect/totalCuts*100):0;
+  let g='見習い';
+  if(score>28000)g='影のドネル職人'; else if(score>19000)g='上忍ケバブ'; else if(score>11000)g='中忍ケバブ'; else if(score>5000)g='下忍ケバブ';
+  gradeEl.textContent=`${g} ・ PERFECT ${acc}% ・ MAX FLOW ×${bestFlow.toFixed(1)}`;
+  endEl.style.display='flex';
+}
+let starting=false;
+function safeBegin(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  if(starting || state==='play') return;
+  starting=true;
+  // Hide immediately so a successful tap is visually obvious on iPhone.
+  startEl.style.display='none';
+  endEl.style.display='none';
+  window.setTimeout(function(){
+    try{ begin(); }
+    catch(err){
+      starting=false; state='menu'; startEl.style.display='flex';
+      if(runtimeStatus) runtimeStatus.textContent='ERROR: '+(err && err.message ? err.message : String(err));
+    }
+  },0);
+}
+startBtn.addEventListener('click',safeBegin,false);
+startBtn.addEventListener('touchend',safeBegin,{passive:false});
+retryBtn.addEventListener('click',safeBegin,false);
+retryBtn.addEventListener('touchend',safeBegin,{passive:false});
+
+function pointerPos(e){
+  const r=canvas.getBoundingClientRect();
+  return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};
+}
+function updatePointer(e){
+  const p=pointerPos(e); pointer.x=p.x; pointer.y=p.y;
+  const xDeep=W*.56, xShallow=W*.94;
+  pointer.depth=clamp((xShallow-p.x)/(xShallow-xDeep),0,1);
+}
+canvas.addEventListener('pointerdown',e=>{
+  if(state!=='play')return;
+  updatePointer(e);pointer.down=true;flow=1;flowCuts=0;lastCutAt=0;
+  if(canvas.setPointerCapture){try{canvas.setPointerCapture(e.pointerId);}catch(_e){}} e.preventDefault();
+});
+canvas.addEventListener('pointermove',e=>{if(state==='play'){updatePointer(e);e.preventDefault();}});
+function endPointer(e){
+  if(state!=='play')return;
+  if(pointer.down && flowCuts>=3){
+    addFloater(W*.72,H*.16,`BANK ×${flow.toFixed(1)}`,'#fff',14);
+  }
+  pointer.down=false;flow=1;flowCuts=0;if(e && e.preventDefault)e.preventDefault();
+}
+canvas.addEventListener('pointerup',endPointer);
+canvas.addEventListener('pointercancel',endPointer);
+// iOS/WebView fallback when Pointer Events are incomplete.
+canvas.addEventListener('touchstart',function(e){
+  if(state!=='play' || !e.touches || !e.touches[0])return;
+  var t=e.touches[0]; updatePointer(t); pointer.down=true; flow=1; flowCuts=0; lastCutAt=0; e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchmove',function(e){
+  if(state!=='play' || !e.touches || !e.touches[0])return; updatePointer(e.touches[0]); e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchend',function(e){endPointer(e);},{passive:false});
+
+function bandAt(y){
+  if(y<meat.top||y>meat.bottom)return null;
+  const i=clamp(Math.floor((y-meat.top)/(meat.bottom-meat.top)*BAND_COUNT),0,BAND_COUNT-1);
+  return bands[i];
+}
+
+function cookedDepth(b){
+  // edible shell grows as the surface cooks; 3..16px during useful window
+  return clamp(2 + (b.heat-.12)*18,2,17);
+}
+function bandColor(heat){
+  if(heat<.30) return [168,59,48];       // raw/red
+  if(heat<.48){const t=(heat-.30)/.18; return [lerp(176,210,t),lerp(70,103,t),lerp(48,46,t)];}
+  if(heat<.82){const t=(heat-.48)/.34; return [lerp(214,176,t),lerp(108,67,t),lerp(45,29,t)];} // ideal orange/brown
+  const t=clamp((heat-.82)/.35,0,1);return [lerp(150,47,t),lerp(54,25,t),lerp(28,21,t)]; // burnt
+}
+function rgb(c,a=1){return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`}
+
+function tryCut(now){
+  if(!pointer.down || now-lastCutAt<78)return;
+  lastCutAt=now;
+  const b=bandAt(pointer.y);
+  if(!b || pointer.depth<.055){ return; }
+
+  const want=pointer.depth*20; // player-requested depth in pixels
+  const edible=cookedDepth(b);
+  const heat=b.heat;
+  let quality=''; let gain=0; let cut=Math.min(want,b.r*.22); let good=false;
+
+  totalCuts++;
+  if(heat<.34 && want>3.5){
+    quality='RAW'; gain=-35; breakFlow(); b.scar=Math.min(1,b.scar+.3); shake=5;
+    buzz([15,20,20]); tone(90,.045,'sawtooth',.025);
+  }else if(heat>.98){
+    quality='BURNT'; gain=10; breakFlow(); b.scar=Math.min(1,b.scar+.22); shake=4;
+    buzz(25); tone(120,.05,'square',.02);
+  }else{
+    const err=Math.abs(want-edible);
+    const idealHeat=(heat>=.48&&heat<=.88);
+    if(err<=2.8 && idealHeat){
+      quality='PERFECT'; good=true; perfect++;
+      flowCuts++; flow=Math.min(12,1+flowCuts*.18+Math.max(0,flowCuts-10)*.035);bestFlow=Math.max(bestFlow,flow);
+      gain=(90+cut*16)*flow;
+      b.scar=Math.max(0,b.scar-.08);
+      swoosh(flow); buzz(8);
+    }else if(want>edible+4.0){
+      quality='TOO DEEP'; gain=15; breakFlow(); b.scar=Math.min(1,b.scar+.25); shake=3.5;
+      tone(110,.035,'sawtooth',.018);
+    }else{
+      quality=heat<.45?'EARLY':'GOOD'; good=true;
+      flowCuts++; flow=Math.min(8,1+flowCuts*.11);bestFlow=Math.max(bestFlow,flow);
+      gain=(35+cut*9)*flow;
+      swoosh(flow*.6); buzz(5);
+    }
+  }
+
+  score=Math.max(0,score+gain);
+  const actualCut=Math.max(1,Math.min(cut, edible + (quality==='TOO DEEP'?5:2)));
+  b.r=Math.max(13,b.r-actualCut*.54);
+  // small local deformation makes player-created topology
+  const idx=bands.indexOf(b);
+  if(idx>0)bands[idx-1].r=Math.max(13,bands[idx-1].r-actualCut*.11);
+  if(idx<bands.length-1)bands[idx+1].r=Math.max(13,bands[idx+1].r-actualCut*.11);
+  b.heat= quality==='BURNT' ? .24 : .16 + rand(0,.08); // fresh raw surface after shaving
+
+  const right=meat.cx+b.r;
+  addFloater(Math.min(W-68,right+42),b.y-6,quality, quality==='PERFECT'?'#ffe07a':quality==='GOOD'?'#fff':'#ff857a', quality==='PERFECT'?15:12);
+  if(good)spawnMeat(right,b.y,quality==='PERFECT'?9:5,cut);
+}
+function breakFlow(){flow=1;flowCuts=0;}
+function buzz(p){try{if(navigator.vibrate)navigator.vibrate(p)}catch(e){}}
+function tone(freq,dur,type='sine',vol=.02){
+  if(!audioCtx)return;
+  try{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(vol,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+dur);o.connect(g).connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function swoosh(strength){
+  if(!audioCtx)return;
+  try{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='triangle';
+    o.frequency.setValueAtTime(360+strength*18,audioCtx.currentTime);o.frequency.exponentialRampToValueAtTime(120,audioCtx.currentTime+.035);
+    g.gain.setValueAtTime(.018,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.04);
+    o.connect(g).connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+.04);
+  }catch(e){}
+}
+
+function spawnMeat(x,y,n,cut){
+  for(let i=0;i<n;i++) particles.push({x:x+rand(-3,8),y:y+rand(-6,6),vx:rand(35,110),vy:rand(-20,35),g:rand(170,250),life:rand(.55,1),rot:rand(0,6.28),vr:rand(-7,7),w:rand(5,12)+cut*.12,h:rand(2,5)});
+}
+function addFloater(x,y,text,color='#fff',size=13){floaters.push({x,y,text,color,size,life:.65});}
+
+function update(dt,now){
+  const elapsed=(now-startedAt)/1000; timeLeft=Math.max(0,60-elapsed);
+  if(timeLeft<=0){finish();return;}
+
+  // Cooking: fresh surfaces gradually move raw -> ideal -> burnt.
+  bands.forEach((b,i)=>{
+    const local=1 + .08*Math.sin(now*.0015+i*.63);
+    b.heat=Math.min(1.18,b.heat+b.cookRate*local*dt);
+  });
+  tryCut(now);
+
+  particles.forEach(p=>{p.life-=dt;p.vy+=p.g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.rot+=p.vr*dt;});
+  particles=particles.filter(p=>p.life>0&&p.y<H+30);
+  floaters.forEach(f=>{f.life-=dt;f.y-=25*dt;});floaters=floaters.filter(f=>f.life>0);
+  shake=Math.max(0,shake-22*dt);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  if(shake>0)ctx.translate(rand(-shake,shake),rand(-shake,shake));
+  drawBackground();drawHUD();drawNinja();drawMeat();drawBlade();drawParticles();drawControlHint();drawFloaters();
+  ctx.restore();
+}
+function drawBackground(){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#151515');g.addColorStop(.5,'#0b0b0b');g.addColorStop(1,'#050505');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // subtle kitchen lines
+  ctx.strokeStyle='rgba(255,255,255,.035)';ctx.lineWidth=1;
+  for(let y=H*.12;y<H;y+=52){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+}
+function drawHUD(){
+  ctx.fillStyle='#fff';ctx.font='900 26px system-ui';ctx.textAlign='left';ctx.fillText(Math.round(score).toLocaleString(),18,38);
+  ctx.font='700 11px system-ui';ctx.fillStyle='#8d8d8d';ctx.fillText('SCORE',18,54);
+  ctx.textAlign='right';ctx.fillStyle=timeLeft<10?'#ff7b6f':'#fff';ctx.font='900 25px system-ui';ctx.fillText(timeLeft.toFixed(1),W-18,38);
+  ctx.font='700 11px system-ui';ctx.fillStyle='#8d8d8d';ctx.fillText('SEC',W-18,54);
+
+  const barX=18,barY=70,barW=W-36,barH=9;
+  ctx.fillStyle='#272727';roundRect(barX,barY,barW,barH,5);ctx.fill();
+  const f=clamp((flow-1)/9,0,1);const fg=ctx.createLinearGradient(barX,0,barX+barW,0);fg.addColorStop(0,'#f3c05c');fg.addColorStop(1,'#fff0a6');ctx.fillStyle=fg;roundRect(barX,barY,Math.max(3,barW*f),barH,5);ctx.fill();
+  ctx.textAlign='left';ctx.fillStyle=flow>1?'#ffe287':'#777';ctx.font='800 13px system-ui';ctx.fillText(`FLOW ×${flow.toFixed(1)}`,18,98);
+  if(flow>=4){ctx.textAlign='right';ctx.fillStyle='#ffe287';ctx.font='800 12px system-ui';ctx.fillText(flow>=8?'影分身域':flow>=6?'無音斬り': '加速中',W-18,98);}
+}
+function drawMeat(){
+  const rodTop=meat.top-36,rodBottom=meat.bottom+34;
+  ctx.strokeStyle='#777';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(meat.cx,rodTop);ctx.lineTo(meat.cx,rodBottom);ctx.stroke();
+  ctx.fillStyle='#353535';roundRect(meat.cx-25,rodTop-8,50,10,5);ctx.fill();
+  ctx.fillStyle='#202020';roundRect(meat.cx-31,rodBottom-3,62,12,6);ctx.fill();
+
+  const rot=(performance.now()*.0014)%1;
+  bands.forEach((b,i)=>{
+    const c=bandColor(b.heat);
+    const x=meat.cx-b.r;
+    // body
+    ctx.fillStyle=rgb(c);roundRect(x,b.y-b.h/2,b.r*2,b.h+.7,Math.min(6,b.h/2));ctx.fill();
+    // rotating highlight/shadow across surface
+    const phase=(rot+i*.018)%1;
+    const highlightX=meat.cx + Math.sin(phase*Math.PI*2)*b.r*.58;
+    const grad=ctx.createLinearGradient(x,0,x+b.r*2,0);
+    grad.addColorStop(0,'rgba(0,0,0,.28)');grad.addColorStop(clamp((highlightX-x)/(b.r*2)-.14,0,1),'rgba(255,255,255,.01)');grad.addColorStop(clamp((highlightX-x)/(b.r*2),0,1),'rgba(255,225,180,.22)');grad.addColorStop(clamp((highlightX-x)/(b.r*2)+.17,0,1),'rgba(255,255,255,.01)');grad.addColorStop(1,'rgba(0,0,0,.34)');
+    ctx.fillStyle=grad;roundRect(x,b.y-b.h/2,b.r*2,b.h+.7,Math.min(6,b.h/2));ctx.fill();
+    // burn specks
+    if(b.heat>.90){ctx.fillStyle=`rgba(30,15,8,${clamp((b.heat-.9)*1.9,0,.55)})`;for(let s=0;s<2;s++){const px=meat.cx + Math.sin(i*12.3+s*4.2)*b.r*.72;ctx.fillRect(px,b.y-1,2.5,2.2);}}
+  });
+
+  // flame / heater
+  const fx=meat.cx-meat.baseR-46;
+  const flame=ctx.createRadialGradient(fx,meat.top+(meat.bottom-meat.top)*.52,8,fx,meat.top+(meat.bottom-meat.top)*.52,62);flame.addColorStop(0,'rgba(255,151,46,.34)');flame.addColorStop(.45,'rgba(255,74,32,.13)');flame.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=flame;ctx.fillRect(fx-70,meat.top,120,meat.bottom-meat.top);
+}
+function drawBlade(){
+  if(state!=='play')return;
+  const b=bandAt(pointer.y);
+  const y=clamp(pointer.y,meat.top-10,meat.bottom+10);
+  const shallowX=W*.94,deepX=W*.56;
+  const handX=clamp(pointer.x,deepX,shallowX);
+  let tipX=meat.cx+(b?b.r:meat.baseR*.8)+7;
+  const penetration=pointer.depth*20;
+  tipX-=penetration;
+  ctx.save();
+  ctx.globalAlpha=pointer.down?1:.72;
+  ctx.strokeStyle=pointer.down?'#f7f7f7':'#9e9e9e';ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tipX,y);ctx.lineTo(handX,y+2);ctx.stroke();
+  ctx.fillStyle='#555';roundRect(handX-2,y-5,31,12,4);ctx.fill();
+  ctx.restore();
+}
+function drawNinja(){
+  // Minimal silhouette: theme layer, deliberately secondary to mechanic.
+  const x=W*.13,y=H*.68,s=Math.min(1,W/390);
+  ctx.save();ctx.translate(x,y);ctx.fillStyle='#050505';ctx.strokeStyle='#272727';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,-35,22*s,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.fillRect(-19*s,-34,38*s,12);
+  ctx.fillStyle='#c9b59e';ctx.fillRect(-12*s,-31,24*s,4);
+  ctx.fillStyle='#050505';ctx.beginPath();ctx.moveTo(-20*s,-15);ctx.lineTo(16*s,-16);ctx.lineTo(31*s,28);ctx.lineTo(-29*s,28);ctx.closePath();ctx.fill();ctx.stroke();
+  if(flow>=5){ctx.globalAlpha=.12;for(let i=1;i<Math.min(5,Math.floor(flow/2));i++){ctx.translate(-9,0);ctx.fillStyle='#ddd';ctx.beginPath();ctx.arc(0,-35,20,0,Math.PI*2);ctx.fill();}}
+  ctx.restore();
+}
+function drawParticles(){
+  particles.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=`rgba(181,83,43,${clamp(p.life*1.6,0,1)})`;roundRect(-p.w/2,-p.h/2,p.w,p.h,2);ctx.fill();ctx.restore();});
+}
+function drawControlHint(){
+  if(state!=='play')return;
+  const x1=W*.56,x2=W*.94,y=H*.89;
+  ctx.strokeStyle='rgba(255,255,255,.17)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();
+  ctx.fillStyle='#777';ctx.font='700 10px system-ui';ctx.textAlign='left';ctx.fillText('深い',x1,y+18);ctx.textAlign='right';ctx.fillText('浅い',x2,y+18);
+  ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,.30)';ctx.font='700 11px system-ui';ctx.fillText('← 切る深さ →', (x1+x2)/2,y-8);
+}
+function drawFloaters(){
+  floaters.forEach(f=>{ctx.globalAlpha=clamp(f.life*2,0,1);ctx.textAlign='center';ctx.font=`900 ${f.size}px system-ui`;ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y);ctx.globalAlpha=1;});
+}
+function roundRect(x,y,w,h,r){
+  if(w<0){x+=w;w=-w} if(h<0){y+=h;h=-h} r=Math.max(0,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+
+function loop(ts){
+  if(state!=='play')return;
+  const dt=Math.min(.033,(ts-lastTs)/1000||.016);lastTs=ts;update(dt,ts);draw();
+  if(state==='play')requestAnimationFrame(loop);
+}
+
+// static first frame behind menu
+resetBands();draw();
+})();
+</script>
+</body>
+</html>
